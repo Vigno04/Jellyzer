@@ -9,6 +9,14 @@
     "imageUrl": "",
     "versions": [
       {
+        "version": "0.0.5",
+        "changelog": "Release 0.0.5",
+        "targetAbi": "10.9.0.0",
+        "sourceUrl": "https://github.com/Vigno04/Jellyzer/releases/download/v0.0.5/jellyfin-plugin-jellyzer_0.0.5.zip",
+        "checksum": "13f11182a675f5635a69836558108e34",
+        "timestamp": "2026-03-02T19:25:17Z"
+      },
+      {
         "version": "0.0.1",
         "changelog": "Release 0.0.1",
         "targetAbi": "10.9.0.0",
