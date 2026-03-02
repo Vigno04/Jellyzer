@@ -1,0 +1,138 @@
+name: Release Plugin
+
+on:
+  push:
+    tags:
+      - "v*"   # es. v1.0.0.0 oppure v0.0.1
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (es. 1.0.0.0)"
+        required: true
+        default: "1.0.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout ─────────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Resolve version ───────────────────────────────────────────────────────
+      - name: Resolve version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            # Strip leading 'v' from tag name (e.g. v1.0.0.0 -> 1.0.0.0)
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "TAG=v$VERSION"   >> $GITHUB_ENV
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      # ── Patch Directory.Build.props with the release version ──────────────────
+      - name: Patch version in Directory.Build.props
+        run: |
+          sed -i "s|<Version>.*</Version>|<Version>${{ env.VERSION }}</Version>|g"         Jellyfin.Plugin.Jellyzer/Directory.Build.props
+          sed -i "s|<AssemblyVersion>.*</AssemblyVersion>|<AssemblyVersion>${{ env.VERSION }}</AssemblyVersion>|g" Jellyfin.Plugin.Jellyzer/Directory.Build.props
+          sed -i "s|<FileVersion>.*</FileVersion>|<FileVersion>${{ env.VERSION }}</FileVersion>|g"                 Jellyfin.Plugin.Jellyzer/Directory.Build.props
+
+      # ── Setup .NET 9 ──────────────────────────────────────────────────────────
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      # ── Build ─────────────────────────────────────────────────────────────────
+      - name: Restore & Build
+        run: |
+          dotnet restore Jellyfin.Plugin.Jellyzer/Jellyfin.Plugin.Jellyzer.sln
+          dotnet build  Jellyfin.Plugin.Jellyzer/Jellyfin.Plugin.Jellyzer.sln --configuration Release --no-restore
+
+      # ── Package ───────────────────────────────────────────────────────────────
+      - name: Create release zip
+        id: zip
+        run: |
+          ZIP_NAME="jellyfin-plugin-jellyzer_${{ env.VERSION }}.zip"
+          DLL="Jellyfin.Plugin.Jellyzer/Jellyfin.Plugin.Jellyzer/bin/Release/net9.0/Jellyfin.Plugin.Jellyzer.dll"
+          zip -j "$ZIP_NAME" "$DLL"
+          echo "ZIP_NAME=$ZIP_NAME" >> $GITHUB_ENV
+
+          # MD5 checksum (Jellyfin manifest format)
+          CHECKSUM=$(md5sum "$ZIP_NAME" | awk '{print $1}')
+          echo "CHECKSUM=$CHECKSUM" >> $GITHUB_ENV
+
+      # ── Create GitHub Release ─────────────────────────────────────────────────
+      - name: Create GitHub Release
+        id: gh_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: "Jellyzer v${{ env.VERSION }}"
+          generate_release_notes: true
+          files: ${{ env.ZIP_NAME }}
+
+      # ── Update manifest.json ─────────────────────────────────────────────────
+      - name: Update manifest.json
+        env:
+          REPO: ${{ github.repository }}
+          VERSION: ${{ env.VERSION }}
+          TAG: ${{ env.TAG }}
+          CHECKSUM: ${{ env.CHECKSUM }}
+          ZIP_NAME: ${{ env.ZIP_NAME }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, datetime
+
+          repo     = os.environ["REPO"]
+          version  = os.environ["VERSION"]
+          tag      = os.environ["TAG"]
+          checksum = os.environ["CHECKSUM"]
+          zip_name = os.environ["ZIP_NAME"]
+
+          source_url = f"https://github.com/{repo}/releases/download/{tag}/{zip_name}"
+          timestamp  = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S") + "Z"
+
+          with open("Jellyfin.Plugin.Jellyzer/manifest.json", "r") as f:
+              manifest = json.load(f)
+
+          new_entry = {
+              "version":   version,
+              "changelog": f"Release {version}",
+              "targetAbi": "10.9.0.0",
+              "sourceUrl": source_url,
+              "checksum":  checksum,
+              "timestamp": timestamp,
+          }
+
+          # Prepend (newest first), remove duplicates with same version
+          manifest[0]["versions"] = [
+              new_entry,
+              *[v for v in manifest[0]["versions"] if v["version"] != version],
+          ]
+
+          with open("Jellyfin.Plugin.Jellyzer/manifest.json", "w") as f:
+              json.dump(manifest, f, indent=2)
+              f.write("\n")
+
+          print(f"manifest.json updated – version {version}, checksum {checksum}")
+          EOF
+
+      # ── Commit updated manifest back to repo ──────────────────────────────────
+      - name: Commit manifest.json
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Jellyfin.Plugin.Jellyzer/manifest.json Jellyfin.Plugin.Jellyzer/Directory.Build.props
+          git diff --cached --quiet || git commit -m "release v${{ env.VERSION }} [skip ci]"
+          git push origin HEAD:main

@@ -1,0 +1,24 @@
+name: Build
+
+on:
+  push:
+    branches: ["main"]
+    paths-ignore: ["manifest.json", "**.md"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+
+      - name: Restore & Build
+        run: |
+          dotnet restore Jellyfin.Plugin.Jellyzer/Jellyfin.Plugin.Jellyzer.sln
+          dotnet build  Jellyfin.Plugin.Jellyzer/Jellyfin.Plugin.Jellyzer.sln --configuration Release --no-restore
