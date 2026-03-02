@@ -134,5 +134,22 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Jellyfin.Plugin.Jellyzer/manifest.json Jellyfin.Plugin.Jellyzer/Directory.Build.props
-          git diff --cached --quiet || git commit -m "release v${{ env.VERSION }} [skip ci]"
-          git push origin HEAD:main
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git commit -m "release v${{ env.VERSION }} [skip ci]"
+
+          for i in 1 2 3; do
+            git fetch origin main
+            git rebase origin/main
+            if git push origin HEAD:main; then
+              echo "Pushed successfully on attempt $i"
+              exit 0
+            fi
+            echo "Push failed on attempt $i, retrying..."
+          done
+
+          echo "Failed to push after 3 attempts"
+          exit 1
