@@ -1,0 +1,7 @@
+intro-skipper/
+jellyfin-plugin-template/
+
+# .NET build output
+**/bin/
+**/obj/
+

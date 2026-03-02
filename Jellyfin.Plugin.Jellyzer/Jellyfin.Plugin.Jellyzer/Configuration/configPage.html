@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Jellyzer – Metadata Translator</title>
+</head>
+<body>
+<div id="JellyzerConfigPage"
+     data-role="page"
+     class="page type-interior pluginConfigurationPage"
+     data-require="emby-input,emby-button,emby-select,emby-checkbox">
+
+    <div data-role="content">
+        <div class="content-primary">
+
+            <!-- ─── SECTION 1 · AI / Translation settings ─────────────────── -->
+            <form id="JellyzerSettingsForm">
+                <div class="sectionTitleContainer sectionTitleContainerFlex">
+                    <h2 class="sectionTitle">AI Translation Settings</h2>
+                </div>
+
+                <!-- LM Studio base URL -->
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="LmStudioBaseUrl">
+                        OpenAI-Compatible Endpoint URL
+                    </label>
+                    <input id="LmStudioBaseUrl" name="LmStudioBaseUrl" type="text"
+                           is="emby-input" placeholder="http://localhost:1234/v1" />
+                    <div class="fieldDescription">
+                        Base URL of LM Studio (or any OpenAI-compatible server).
+                        Example: <code>http://localhost:1234/v1</code>
+                    </div>
+                </div>
+
+                <!-- Model selection -->
+                <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="ModelNameSelect">Model</label>
+                    <div style="display:flex; gap:.5em; align-items:center;">
+                        <select is="emby-select" id="ModelNameSelect"
+                                class="emby-select-withcolor emby-select" style="flex:1;">
+                            <option value="">— enter URL above and click Refresh —</option>
+                        </select>
+                        <button is="emby-button" type="button" id="BtnLoadModels"
+                                class="raised emby-button" style="white-space:nowrap; flex-shrink:0;">
+                            ↺ Refresh
+                        </button>
+                    </div>
+                    <!-- hidden field keeps value in sync with the config save logic -->
+                    <input type="hidden" id="ModelName" name="ModelName" />
+                    <div class="fieldDescription">
+                        Enter the endpoint URL above, then click Refresh to load the available models.
+                    </div>
+                </div>
+
+                <!-- Language pair -->
+                <div style="display:flex; gap:1em; flex-wrap:wrap;">
+                    <div class="inputContainer" style="flex:1; min-width:160px;">
+                        <label class="inputLabel inputLabelUnfocused" for="SourceLanguage">
+                            Source Language
+                        </label>
+                        <input id="SourceLanguage" name="SourceLanguage" type="text"
+                               is="emby-input" placeholder="English" />
+                        <div class="fieldDescription">
+                            Language of the original metadata (default: English).
+                        </div>
+                    </div>
+                    <div class="inputContainer" style="flex:1; min-width:160px;">
+                        <label class="inputLabel inputLabelUnfocused" for="TargetLanguage">
+                            Target Language
+                        </label>
+                        <input id="TargetLanguage" name="TargetLanguage" type="text"
+                               is="emby-input" placeholder="Italian" />
+                        <div class="fieldDescription">
+                            Language to translate metadata into.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Fields to translate (used as defaults in the Translate Tool) -->
+                <div class="sectionTitleContainer" style="margin-top:1em;">
+                    <h3 class="sectionTitle" style="font-size:1em;">Fields to Translate by Default</h3>
+                </div>
+
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input id="TranslateTitle" name="TranslateTitle" type="checkbox" is="emby-checkbox" />
+                        <span>Title</span>
+                    </label>
+                </div>
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input id="TranslateOverview" name="TranslateOverview" type="checkbox" is="emby-checkbox" />
+                        <span>Overview / Synopsis</span>
+                    </label>
+                </div>
+                <div class="checkboxContainer checkboxContainer-withDescription">
+                    <label class="emby-checkbox-label">
+                        <input id="TranslateTagline" name="TranslateTagline" type="checkbox" is="emby-checkbox" />
+                        <span>Tagline</span>
+                    </label>
+                </div>
+
+                <div style="display:flex; gap:1em; flex-wrap:wrap; margin-top:1em;">
+                    <button is="emby-button" type="submit" class="raised button-submit emby-button">
+                        <span>Save Settings</span>
+                    </button>
+                    <button is="emby-button" type="button" id="BtnTestConnection"
+                            class="raised emby-button">
+                        <span>Test Connection</span>
+                    </button>
+                </div>
+
+                <div id="TestConnectionResult" style="margin-top:.5em; display:none;"></div>
+            </form>
+
+            <hr style="margin: 2em 0; border-color: rgba(255,255,255,.1);" />
+
+            <!-- ─── SECTION 2 · Translate a specific item ─────────────────── -->
+            <div id="JellyzerTranslateTool">
+                <div class="sectionTitleContainer sectionTitleContainerFlex">
+                    <h2 class="sectionTitle">Translate Item Metadata</h2>
+                </div>
+                <p style="opacity:.7;">
+                    Select a library and an item to translate its metadata using the AI settings above.
+                    The translated text is written back to the Jellyfin database immediately.
+                </p>
+
+                <!-- Library picker -->
+                <div class="selectContainer">
+                    <label class="selectLabel" for="LibrarySelect">Library</label>
+                    <select is="emby-select" id="LibrarySelect" class="emby-select-withcolor emby-select">
+                        <option value="">— select a library —</option>
+                    </select>
+                </div>
+
+                <!-- Item picker -->
+                <div class="selectContainer" id="ItemSelectContainer" style="display:none;">
+                    <label class="selectLabel" for="ItemSelect">Item</label>
+                    <select is="emby-select" id="ItemSelect" class="emby-select-withcolor emby-select">
+                        <option value="">— select an item —</option>
+                    </select>
+                </div>
+
+                <!-- Item info preview -->
+                <div id="ItemPreview" style="display:none; margin:.5em 0 1em;
+                     padding:.75em 1em; background:rgba(255,255,255,.05);
+                     border-left:3px solid var(--accent-color, #00a4dc); border-radius:4px;">
+                    <div id="ItemPreviewTitle" style="font-weight:bold; margin-bottom:.25em;"></div>
+                    <div id="ItemPreviewOverview"
+                         style="font-size:.85em; opacity:.75; max-height:4em; overflow:hidden;"></div>
+                </div>
+
+                <!-- Per-request field overrides -->
+                <div id="FieldOverrides" style="display:none;">
+                    <div class="sectionTitleContainer" style="margin-top:.5em;">
+                        <h3 class="sectionTitle" style="font-size:.9em;">Fields to translate for this item</h3>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label class="emby-checkbox-label">
+                            <input id="XlateTitle" type="checkbox" is="emby-checkbox" />
+                            <span>Title</span>
+                        </label>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label class="emby-checkbox-label">
+                            <input id="XlateOverview" type="checkbox" is="emby-checkbox" />
+                            <span>Overview</span>
+                        </label>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label class="emby-checkbox-label">
+                            <input id="XlateTagline" type="checkbox" is="emby-checkbox" />
+                            <span>Tagline</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div style="margin-top:1em;">
+                    <button is="emby-button" type="button" id="BtnTranslate"
+                            class="raised button-submit emby-button" disabled>
+                        <span>Translate</span>
+                    </button>
+                </div>
+
+                <!-- Results -->
+                <div id="TranslateResult" style="display:none; margin-top:1em;
+                     padding:1em; background:rgba(255,255,255,.05); border-radius:6px;">
+                    <div id="TranslateResultMessage" style="font-weight:bold; margin-bottom:.5em;"></div>
+                    <div id="TranslateResultFields"></div>
+                </div>
+            </div>
+
+        </div><!-- /content-primary -->
+    </div><!-- /content -->
+
+    <script type="text/javascript">
+    (function () {
+        'use strict';
+
+        var PLUGIN_ID = '4a3e8f9c-d2b1-4e7a-9c5d-3f1a2b4c6d8e';
+
+        // ── Helpers ──────────────────────────────────────────────────────────
+
+        function show(id)  { document.getElementById(id).style.display = ''; }
+        function hide(id)  { document.getElementById(id).style.display = 'none'; }
+        function get(id)   { return document.getElementById(id); }
+
+        function setResultMessage(text, isError) {
+            var el = get('TranslateResultMessage');
+            el.textContent = text;
+            el.style.color = isError ? '#f04' : '#4caf50';
+        }
+
+        // ── Load plugin configuration ────────────────────────────────────────
+
+        function loadConfig() {
+            Dashboard.showLoadingMsg();
+            ApiClient.getPluginConfiguration(PLUGIN_ID).then(function (config) {
+                get('LmStudioBaseUrl').value  = config.LmStudioBaseUrl  || '';
+                get('ModelName').value         = config.ModelName         || '';
+                get('SourceLanguage').value    = config.SourceLanguage    || 'English';
+                get('TargetLanguage').value    = config.TargetLanguage    || 'Italian';
+                get('TranslateTitle').checked    = config.TranslateTitle    !== false;
+                get('TranslateOverview').checked = config.TranslateOverview !== false;
+                get('TranslateTagline').checked  = config.TranslateTagline  !== false;
+                // pre-fill per-item checkboxes with same defaults
+                get('XlateTitle').checked    = config.TranslateTitle    !== false;
+                get('XlateOverview').checked = config.TranslateOverview !== false;
+                get('XlateTagline').checked  = config.TranslateTagline  !== false;
+                // Try to auto-load models from the saved URL and select the saved model
+                if (config.LmStudioBaseUrl) {
+                    loadModels(config.LmStudioBaseUrl, config.ModelName || '');
+                } else if (config.ModelName) {
+                    // No URL yet but we have a saved model name – keep it as lone option
+                    var sel = get('ModelNameSelect');
+                    sel.innerHTML = '';
+                    var opt = document.createElement('option');
+                    opt.value = config.ModelName;
+                    opt.textContent = config.ModelName;
+                    sel.appendChild(opt);
+                }
+                Dashboard.hideLoadingMsg();
+            });
+        }
+
+        // ── Save configuration ───────────────────────────────────────────────
+
+        get('JellyzerSettingsForm').addEventListener('submit', function (e) {
+            e.preventDefault();
+            Dashboard.showLoadingMsg();
+            ApiClient.getPluginConfiguration(PLUGIN_ID).then(function (config) {
+                config.LmStudioBaseUrl   = get('LmStudioBaseUrl').value.trim();
+                config.ModelName         = get('ModelName').value.trim();
+                config.SourceLanguage    = get('SourceLanguage').value.trim();
+                config.TargetLanguage    = get('TargetLanguage').value.trim();
+                config.TranslateTitle    = get('TranslateTitle').checked;
+                config.TranslateOverview = get('TranslateOverview').checked;
+                config.TranslateTagline  = get('TranslateTagline').checked;
+                ApiClient.updatePluginConfiguration(PLUGIN_ID, config).then(function (result) {
+                    Dashboard.processPluginConfigurationUpdateResult(result);
+                });
+            });
+        });
+
+        // ── Load models from LM Studio endpoint ──────────────────────────────
+
+        function loadModels(baseUrl, selectValue) {
+            var url = baseUrl || get('LmStudioBaseUrl').value.trim();
+            if (!url) {
+                Dashboard.alert('Enter the endpoint URL first.');
+                return;
+            }
+            var sel = get('ModelNameSelect');
+            sel.innerHTML = '<option value="">Loading…</option>';
+            var encodedUrl = encodeURIComponent(url);
+            ApiClient.ajax({
+                url:  ApiClient.getUrl('Jellyzer/Models') + '?baseUrl=' + encodedUrl,
+                type: 'GET'
+            }).then(function (models) {
+                sel.innerHTML = '';
+                if (!models || !models.length) {
+                    sel.innerHTML = '<option value="">(no models found)</option>';
+                    return;
+                }
+                models.forEach(function (m) {
+                    var opt = document.createElement('option');
+                    opt.value = m.id || m.Id || '';
+                    opt.textContent = m.id || m.Id || '(unknown)';
+                    sel.appendChild(opt);
+                });
+                // Select the previously saved model (or first)
+                var target = selectValue || get('ModelName').value;
+                if (target) { sel.value = target; }
+                if (!sel.value && sel.options.length) { sel.selectedIndex = 0; }
+                // Sync hidden field
+                get('ModelName').value = sel.value;
+            }).catch(function (err) {
+                sel.innerHTML = '<option value="">(could not load – check URL)</option>';
+                console.warn('Jellyzer: loadModels failed', err);
+            });
+        }
+
+        get('BtnLoadModels').addEventListener('click', function () {
+            loadModels();
+        });
+
+        get('ModelNameSelect').addEventListener('change', function () {
+            get('ModelName').value = this.value;
+        });
+
+        // ── Test connection ──────────────────────────────────────────────────
+
+        get('BtnTestConnection').addEventListener('click', function () {
+            var resultEl = get('TestConnectionResult');
+            resultEl.style.display = '';
+            resultEl.style.color   = '';
+            resultEl.textContent   = 'Connecting…';
+            ApiClient.ajax({ url: ApiClient.getUrl('Jellyzer/Info'), type: 'GET' })
+                .then(function (info) {
+                    resultEl.style.color  = '#4caf50';
+                    resultEl.textContent  = '✓ Connected — provider: ' + info.ProviderName
+                        + ' | model: ' + (info.ModelName || '(not set)');
+                })
+                .catch(function (err) {
+                    resultEl.style.color = '#f04';
+                    resultEl.textContent = '✗ Connection failed – is LM Studio running? (' + err.status + ')';
+                });
+        });
+
+        // ── Load virtual folders (libraries) ────────────────────────────────
+
+        function loadLibraries() {
+            ApiClient.ajax({ url: ApiClient.getUrl('Library/VirtualFolders'), type: 'GET' })
+                .then(function (folders) {
+                    var sel = get('LibrarySelect');
+                    // clear existing options (keep placeholder)
+                    while (sel.options.length > 1) { sel.remove(1); }
+                    folders.forEach(function (folder) {
+                        var opt = document.createElement('option');
+                        opt.value       = folder.ItemId || folder.Id || '';
+                        opt.textContent = folder.Name + (folder.CollectionType ? ' (' + folder.CollectionType + ')' : '');
+                        sel.appendChild(opt);
+                    });
+                })
+                .catch(function () {
+                    console.warn('Jellyzer: could not load virtual folders.');
+                });
+        }
+
+        // ── Load items for selected library ──────────────────────────────────
+
+        get('LibrarySelect').addEventListener('change', function () {
+            var libraryId = this.value;
+            if (!libraryId) {
+                hide('ItemSelectContainer');
+                hide('ItemPreview');
+                hide('FieldOverrides');
+                get('BtnTranslate').disabled = true;
+                return;
+            }
+
+            var userId = ApiClient.getCurrentUserId();
+            Dashboard.showLoadingMsg();
+            ApiClient.getItems(userId, {
+                ParentId:          libraryId,
+                IncludeItemTypes:  'Movie,Series,Episode',
+                Recursive:         true,
+                Fields:            'Overview,Tagline',
+                SortBy:            'SortName',
+                SortOrder:         'Ascending',
+                Limit:             500
+            }).then(function (result) {
+                var sel = get('ItemSelect');
+                while (sel.options.length > 1) { sel.remove(1); }
+                (result.Items || []).forEach(function (item) {
+                    var opt           = document.createElement('option');
+                    opt.value         = item.Id;
+                    opt.textContent   = item.Name + (item.ProductionYear ? ' (' + item.ProductionYear + ')' : '');
+                    opt.dataset.name  = item.Name     || '';
+                    opt.dataset.overview = item.Overview || '';
+                    opt.dataset.type  = item.Type     || '';
+                    sel.appendChild(opt);
+                });
+                show('ItemSelectContainer');
+                Dashboard.hideLoadingMsg();
+            }).catch(function () {
+                Dashboard.hideLoadingMsg();
+            });
+        });
+
+        // ── Show item preview when item selected ─────────────────────────────
+
+        get('ItemSelect').addEventListener('change', function () {
+            var sel        = this;
+            var selectedOpt = sel.options[sel.selectedIndex];
+            var itemId     = this.value;
+
+            if (!itemId) {
+                hide('ItemPreview');
+                hide('FieldOverrides');
+                get('BtnTranslate').disabled = true;
+                return;
+            }
+
+            get('ItemPreviewTitle').textContent   = selectedOpt.dataset.name || itemId;
+            get('ItemPreviewOverview').textContent = selectedOpt.dataset.overview || '(no overview)';
+            show('ItemPreview');
+            show('FieldOverrides');
+            hide('TranslateResult');
+            get('BtnTranslate').disabled = false;
+        });
+
+        // ── Translate ─────────────────────────────────────────────────────────
+
+        get('BtnTranslate').addEventListener('click', function () {
+            var itemId = get('ItemSelect').value;
+            if (!itemId) { return; }
+
+            var btn = this;
+            btn.disabled = true;
+            show('TranslateResult');
+            get('TranslateResultFields').innerHTML = '';
+            setResultMessage('Translating… this may take a moment.', false);
+            get('TranslateResultMessage').style.color = '';
+
+            var payload = {
+                translateTitle:    get('XlateTitle').checked,
+                translateOverview: get('XlateOverview').checked,
+                translateTagline:  get('XlateTagline').checked,
+                sourceLanguage:    get('SourceLanguage').value.trim() || null,
+                targetLanguage:    get('TargetLanguage').value.trim() || null
+            };
+
+            ApiClient.ajax({
+                url:         ApiClient.getUrl('Jellyzer/TranslateItem/' + itemId),
+                type:        'POST',
+                contentType: 'application/json',
+                data:        JSON.stringify(payload)
+            }).then(function (result) {
+                btn.disabled = false;
+                if (result.Success) {
+                    setResultMessage('✓ Translation completed for: ' + result.ItemName, false);
+                } else {
+                    setResultMessage('⚠ Partial success – ' + (result.ErrorMessage || 'unknown error'), true);
+                }
+                renderFieldResults(result.Fields || []);
+            }).catch(function (err) {
+                btn.disabled = false;
+                setResultMessage('✗ Request failed (HTTP ' + err.status + '). Check Jellyfin logs for details.', true);
+            });
+        });
+
+        // ── Render per-field translation results ─────────────────────────────
+
+        function renderFieldResults(fields) {
+            var container = get('TranslateResultFields');
+            container.innerHTML = '';
+            if (!fields.length) {
+                container.innerHTML = '<p style="opacity:.6;">No fields were translated (all were empty or skipped).</p>';
+                return;
+            }
+            fields.forEach(function (f) {
+                var row = document.createElement('div');
+                row.style.cssText = 'margin:.4em 0; padding:.4em .6em; background:rgba(255,255,255,.04); border-radius:4px;';
+                var badge = f.WasTranslated
+                    ? '<span style="color:#4caf50; font-size:.8em; margin-right:.4em;">✓</span>'
+                    : '<span style="color:#aaa;  font-size:.8em; margin-right:.4em;">–</span>';
+                var original    = escapeHtml(f.Original    || '(empty)');
+                var translated  = escapeHtml(f.Translated  || '(empty)');
+                row.innerHTML = badge + '<strong>' + f.Field + '</strong>'
+                    + (f.WasTranslated
+                        ? '<div style="font-size:.82em; margin-top:.2em; opacity:.7;">'
+                            + '<em>Original:</em> ' + original + '</div>'
+                            + '<div style="font-size:.82em; margin-top:.1em;">'
+                            + '<em>Translated:</em> ' + translated + '</div>'
+                        : '<span style="font-size:.82em; opacity:.6;"> — unchanged</span>');
+                container.appendChild(row);
+            });
+        }
+
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        // ── Init ──────────────────────────────────────────────────────────────
+
+        get('JellyzerConfigPage').addEventListener('pageshow', function () {
+            loadConfig();
+            loadLibraries();
+        });
+
+    }());
+    </script>
+
+</div><!-- /page -->
+</body>
+</html>
