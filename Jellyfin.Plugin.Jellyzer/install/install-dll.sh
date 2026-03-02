@@ -25,7 +25,7 @@ find_or_create_plugin_dir() {
     echo "$found"
   else
     # First install – create versioned folder
-    echo "$base/${PLUGIN_NAME}_1.0.0.0"
+    echo "$base/${PLUGIN_NAME}_0.0.6"
   fi
   return 0
 }

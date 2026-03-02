@@ -125,17 +125,16 @@
                     The translated text is written back to the Jellyfin database immediately.
                 </p>
 
-                <!-- Library picker -->
-                <div class="selectContainer">
+                <div class="selectContainer" id="LibrarySelectContainer">
                     <label class="selectLabel" for="LibrarySelect">Library</label>
                     <select is="emby-select" id="LibrarySelect" class="emby-select-withcolor emby-select">
-                        <option value="">— select a library —</option>
+                        <option value="">— all libraries —</option>
                     </select>
                 </div>
 
                 <!-- Item picker -->
-                <div class="selectContainer" id="ItemSelectContainer" style="display:none;">
-                    <label class="selectLabel" for="ItemSelect">Item</label>
+                <div class="selectContainer" id="ItemSelectContainer">
+                    <label class="selectLabel" for="ItemSelect">Item (Film / TV Show)</label>
                     <select is="emby-select" id="ItemSelect" class="emby-select-withcolor emby-select">
                         <option value="">— select an item —</option>
                     </select>
@@ -272,9 +271,9 @@
             }
             var sel = get('ModelNameSelect');
             sel.innerHTML = '<option value="">Loading…</option>';
-            var encodedUrl = encodeURIComponent(url);
+            var query = new URLSearchParams({ baseUrl: url });
             ApiClient.ajax({
-                url:  ApiClient.getUrl('Jellyzer/Models') + '?baseUrl=' + encodedUrl,
+                url:  ApiClient.getUrl('Jellyzer/Models') + '?' + query.toString(),
                 type: 'GET'
             }).then(function (models) {
                 sel.innerHTML = '';
@@ -327,65 +326,79 @@
                 });
         });
 
-        // ── Load virtual folders (libraries) ────────────────────────────────
+        // ── Load libraries/items through plugin API ──────────────────────────
 
         function loadLibraries() {
-            ApiClient.ajax({ url: ApiClient.getUrl('Library/VirtualFolders'), type: 'GET' })
-                .then(function (folders) {
-                    var sel = get('LibrarySelect');
-                    // clear existing options (keep placeholder)
-                    while (sel.options.length > 1) { sel.remove(1); }
-                    folders.forEach(function (folder) {
-                        var opt = document.createElement('option');
-                        opt.value       = folder.ItemId || folder.Id || '';
-                        opt.textContent = folder.Name + (folder.CollectionType ? ' (' + folder.CollectionType + ')' : '');
-                        sel.appendChild(opt);
-                    });
-                })
-                .catch(function () {
-                    console.warn('Jellyzer: could not load virtual folders.');
+            var sel = get('LibrarySelect');
+            while (sel.options.length > 1) { sel.remove(1); }
+
+            return ApiClient.ajax({
+                url: ApiClient.getUrl('Jellyzer/Libraries'),
+                type: 'GET'
+            }).then(function (libraries) {
+                (libraries || []).forEach(function (library) {
+                    var opt = document.createElement('option');
+                    opt.value = library.Id || library.id || '';
+                    opt.textContent = library.Name || library.name || '(unknown library)';
+                    sel.appendChild(opt);
                 });
+            }).catch(function (err) {
+                console.warn('Jellyzer: could not load libraries.', err);
+            });
         }
 
-        // ── Load items for selected library ──────────────────────────────────
-
-        get('LibrarySelect').addEventListener('change', function () {
-            var libraryId = this.value;
-            if (!libraryId) {
-                hide('ItemSelectContainer');
-                hide('ItemPreview');
-                hide('FieldOverrides');
-                get('BtnTranslate').disabled = true;
-                return;
-            }
-
-            var userId = ApiClient.getCurrentUserId();
+        function loadMediaItems(libraryId) {
             Dashboard.showLoadingMsg();
-            ApiClient.getItems(userId, {
-                ParentId:          libraryId,
-                IncludeItemTypes:  'Movie,Series,Episode',
-                Recursive:         true,
-                Fields:            'Overview,Tagline',
-                SortBy:            'SortName',
-                SortOrder:         'Ascending',
-                Limit:             500
+            var query = libraryId
+                ? '?' + new URLSearchParams({ libraryId: libraryId }).toString()
+                : '';
+
+            ApiClient.ajax({
+                url: ApiClient.getUrl('Jellyzer/MediaItems') + query,
+                type: 'GET'
             }).then(function (result) {
                 var sel = get('ItemSelect');
                 while (sel.options.length > 1) { sel.remove(1); }
-                (result.Items || []).forEach(function (item) {
+
+                var items = result || [];
+                if (!items.length) {
+                    var emptyOpt = document.createElement('option');
+                    emptyOpt.value = '';
+                    emptyOpt.textContent = '— no items found —';
+                    sel.appendChild(emptyOpt);
+                }
+
+                items.forEach(function (item) {
                     var opt           = document.createElement('option');
-                    opt.value         = item.Id;
-                    opt.textContent   = item.Name + (item.ProductionYear ? ' (' + item.ProductionYear + ')' : '');
-                    opt.dataset.name  = item.Name     || '';
-                    opt.dataset.overview = item.Overview || '';
-                    opt.dataset.type  = item.Type     || '';
+                    var itemId        = item.Id || item.id || '';
+                    var itemName      = item.Name || item.name || '(unknown)';
+                    var itemType      = item.Type || item.type || '';
+                    var itemYear      = item.Year || item.year;
+
+                    opt.value         = itemId;
+                    opt.textContent   = itemName
+                        + (itemYear ? ' (' + itemYear + ')' : '')
+                        + (itemType === 'Series' ? ' (Series)' : ' (Movie)');
+                    opt.dataset.name  = itemName;
+                    opt.dataset.overview = item.Overview || item.overview || '';
+                    opt.dataset.type  = itemType;
                     sel.appendChild(opt);
                 });
-                show('ItemSelectContainer');
+
+                hide('ItemPreview');
+                hide('FieldOverrides');
+                hide('TranslateResult');
+                get('BtnTranslate').disabled = true;
+
                 Dashboard.hideLoadingMsg();
-            }).catch(function () {
+            }).catch(function (err) {
                 Dashboard.hideLoadingMsg();
+                console.warn('Jellyzer: could not load media items.', err);
             });
+        }
+
+        get('LibrarySelect').addEventListener('change', function () {
+            loadMediaItems(this.value || null);
         });
 
         // ── Show item preview when item selected ─────────────────────────────
@@ -490,7 +503,9 @@
 
         get('JellyzerConfigPage').addEventListener('pageshow', function () {
             loadConfig();
-            loadLibraries();
+            loadLibraries().then(function () {
+                loadMediaItems(get('LibrarySelect').value || null);
+            });
         });
 
     }());

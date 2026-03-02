@@ -21,7 +21,7 @@ if exist "%UserProfile%\AppData\Local\jellyfin\plugins\" (
     GOTO CopyDll
   )
   :: First install – create folder
-  SET "DestDir=%UserProfile%\AppData\Local\jellyfin\plugins\%PLUGIN_NAME%_1.0.0.0"
+  SET "DestDir=%UserProfile%\AppData\Local\jellyfin\plugins\%PLUGIN_NAME%_0.0.6"
   GOTO CopyDll
 )
 
@@ -32,7 +32,7 @@ if exist "%ProgramData%\Jellyfin\Server\plugins\" (
     GOTO CopyDll
   )
   :: First install – create folder
-  SET "DestDir=%ProgramData%\Jellyfin\Server\plugins\%PLUGIN_NAME%_1.0.0.0"
+  SET "DestDir=%ProgramData%\Jellyfin\Server\plugins\%PLUGIN_NAME%_0.0.6"
   GOTO CopyDll
 )
 

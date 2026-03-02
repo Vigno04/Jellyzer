@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Mime;
 using System.Text.Json;
@@ -9,6 +10,9 @@ using System.Threading.Tasks;
 using Jellyfin.Plugin.Jellyzer.Models;
 using Jellyfin.Plugin.Jellyzer.Services;
 using MediaBrowser.Common.Api;
+using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.Movies;
+using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Model.Entities;
 using Microsoft.AspNetCore.Authorization;
@@ -93,9 +97,22 @@ public class JellyzerController : ControllerBase
             response.EnsureSuccessStatusCode();
 
             var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-            var listResponse = JsonSerializer.Deserialize<OpenAiModelListResponse>(body, _jsonOptions);
-
-            var models = listResponse?.Data ?? [];
+            var models = new List<ModelInfo>();
+            using (var jsonDoc = JsonDocument.Parse(body))
+            {
+                if (jsonDoc.RootElement.ValueKind == JsonValueKind.Array)
+                {
+                    models = jsonDoc.RootElement.Deserialize<List<ModelInfo>>(_jsonOptions) ?? [];
+                }
+                else if (jsonDoc.RootElement.TryGetProperty("data", out var dataProp))
+                {
+                    models = dataProp.Deserialize<List<ModelInfo>>(_jsonOptions) ?? [];
+                }
+                else if (jsonDoc.RootElement.TryGetProperty("models", out var modelsProp))
+                {
+                    models = modelsProp.Deserialize<List<ModelInfo>>(_jsonOptions) ?? [];
+                }
+            }
 
             _logger.LogInformation(
                 "Jellyzer: found {Count} model(s) at {Url}",
@@ -109,6 +126,78 @@ public class JellyzerController : ControllerBase
             _logger.LogWarning(ex, "Jellyzer: could not reach models endpoint at {Url}", url);
             return StatusCode(StatusCodes.Status502BadGateway, $"Could not reach {url}: {ex.Message}");
         }
+    }
+
+    // ── Libraries and media items ───────────────────────────────────────────
+
+    /// <summary>
+    /// Returns movie and TV virtual libraries available on the server.
+    /// </summary>
+    /// <response code="200">List of compatible libraries.</response>
+    /// <returns>Library list for the config UI.</returns>
+    [HttpGet("Libraries")]
+    [ProducesResponseType(typeof(IReadOnlyList<LibraryInfo>), StatusCodes.Status200OK)]
+    public ActionResult<IReadOnlyList<LibraryInfo>> GetLibraries()
+    {
+        var libraries = _libraryManager
+            .GetVirtualFolders()
+            .Where(folder => Guid.TryParse(folder.ItemId, out _))
+            .Where(folder =>
+            {
+                var collectionType = folder.CollectionType?.ToString();
+                return string.Equals(collectionType, "movies", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(collectionType, "tvshows", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(collectionType, "mixed", StringComparison.OrdinalIgnoreCase)
+                    || string.IsNullOrWhiteSpace(collectionType);
+            })
+            .Select(folder => new LibraryInfo
+            {
+                Id = Guid.Parse(folder.ItemId),
+                Name = folder.Name ?? string.Empty,
+                CollectionType = folder.CollectionType?.ToString()
+            })
+            .OrderBy(folder => folder.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return Ok(libraries);
+    }
+
+    /// <summary>
+    /// Returns movie and series items, optionally filtered by virtual library.
+    /// </summary>
+    /// <param name="libraryId">Optional virtual library GUID.</param>
+    /// <response code="200">List of media items.</response>
+    /// <returns>Media items for selection in the config UI.</returns>
+    [HttpGet("MediaItems")]
+    [ProducesResponseType(typeof(IReadOnlyList<MediaItemInfo>), StatusCodes.Status200OK)]
+    public ActionResult<IReadOnlyList<MediaItemInfo>> GetMediaItems([FromQuery] Guid? libraryId = null)
+    {
+        var query = new InternalItemsQuery
+        {
+            Recursive = true,
+            IsVirtualItem = false
+        };
+
+        if (libraryId.HasValue)
+        {
+            query.ParentId = libraryId.Value;
+        }
+
+        var items = _libraryManager
+            .GetItemList(query, false)
+            .Where(item => item is Movie or Series)
+            .Select(item => new MediaItemInfo
+            {
+                Id = item.Id,
+                Name = item.Name ?? string.Empty,
+                Type = item is Series ? "Series" : "Movie",
+                Year = item.ProductionYear,
+                Overview = item.Overview ?? string.Empty
+            })
+            .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        return Ok(items);
     }
 
     // ── Translation ───────────────────────────────────────────────────────────
@@ -289,13 +378,5 @@ public class JellyzerController : ControllerBase
             SourceLanguage = config?.SourceLanguage,
             TargetLanguage = config?.TargetLanguage
         });
-    }
-
-    // ── Private DTOs (OpenAI /v1/models response) ─────────────────────────────
-
-    private sealed class OpenAiModelListResponse
-    {
-        [JsonPropertyName("data")]
-        public List<ModelInfo> Data { get; set; } = [];
     }
 }

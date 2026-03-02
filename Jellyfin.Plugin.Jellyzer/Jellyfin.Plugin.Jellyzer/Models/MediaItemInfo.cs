@@ -18,4 +18,7 @@ public class MediaItemInfo
 
     /// <summary>Gets or sets the production year (may be null).</summary>
     public int? Year { get; set; }
+
+    /// <summary>Gets or sets the item overview/synopsis (may be empty).</summary>
+    public string Overview { get; set; } = string.Empty;
 }

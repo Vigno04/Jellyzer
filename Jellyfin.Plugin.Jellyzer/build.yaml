@@ -1,7 +1,7 @@
 ---
 name: "Jellyzer"
 guid: "4a3e8f9c-d2b1-4e7a-9c5d-3f1a2b4c6d8e"
-version: "1.0.0.0"
+version: "0.0.6"
 targetAbi: "10.9.0.0"
 framework: "net9.0"
 overview: "Translates Jellyfin item metadata using a local AI (LM Studio / OpenAI-compatible endpoint)."
@@ -15,4 +15,4 @@ owner: "jellyzer"
 artifacts:
   - "Jellyfin.Plugin.Jellyzer.dll"
 changelog: >
-  1.0.0.0 – Initial release. Translate title, overview and tagline via LM Studio.
+  0.0.6 – Fix model loading and movies/series listing in plugin config page.
