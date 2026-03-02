@@ -3,10 +3,19 @@
     "guid": "4a3e8f9c-d2b1-4e7a-9c5d-3f1a2b4c6d8e",
     "name": "Jellyzer",
     "overview": "Translates Jellyfin item metadata using a local AI (LM Studio / OpenAI-compatible endpoint).",
-    "description": "Jellyzer lets you translate movie and TV show metadata (title, overview, tagline) directly from the Jellyfin plugin settings page. Pick a library item, choose your language pair, and the translated metadata is written back to the database instantly. Uses any OpenAI-compatible API – LM Studio running locally is the default.",
+    "description": "Jellyzer lets you translate movie and TV show metadata (title, overview, tagline) directly from the Jellyfin plugin settings page. Pick a library item, choose your language pair, and the translated metadata is written back to the database instantly. Uses any OpenAI-compatible API \u2013 LM Studio running locally is the default.",
     "owner": "jellyzer",
     "category": "Metadata",
     "imageUrl": "",
-    "versions": []
+    "versions": [
+      {
+        "version": "0.0.1",
+        "changelog": "Release 0.0.1",
+        "targetAbi": "10.9.0.0",
+        "sourceUrl": "https://github.com/Vigno04/Jellyzer/releases/download/v0.0.1/jellyfin-plugin-jellyzer_0.0.1.zip",
+        "checksum": "f957d4b31afb143fbeb88f8c225df2de",
+        "timestamp": "2026-03-02T16:53:54Z"
+      }
+    ]
   }
 ]
