@@ -9,14 +9,13 @@
     "imageUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/main/Jellyzer/logo.png",
     "versions": [
       {
-        "version": "0.0.1.0",
+        "version": "0.0.1.10",
         "targetAbi": "10.11.6.0",
-        "sourceUrl": "https://github.com/Vigno04/Jellyzer/releases/download/v0.0.1/jellyzer-0.0.1.zip",
-        "checksum": "7dadd678a6270e6dce7b7a32276cc8a1",
-        "timestamp": "2026-03-19T18:00:00Z",
-        "changelog": "Initial release of Jellyzer plugin for Jellyfin."
+        "sourceUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/main/packages/jellyzer-main-latest.zip",
+        "checksum": "ad69bbd17291ddb91800e6db87061189",
+        "timestamp": "2026-03-19T18:08:25Z",
+        "changelog": "Rolling develop build from f819ed07b34d8ada5f217f33218ddff0f72ea2ee"
       }
     ]
   }
 ]
->>>>>>> 536bc9fde8a1e5be4ed2b3bf32fbbe7876c5a474
