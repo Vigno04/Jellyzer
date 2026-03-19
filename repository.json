@@ -11,9 +11,9 @@
       {
         "version": "0.0.2.0",
         "targetAbi": "10.11.6.0",
-        "sourceUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/main/packages/jellyzer-main-latest.zip",
-        "checksum": "c9f1abcec49703516de10e5707dfba21",
-        "timestamp": "2026-03-19T19:01:42Z",
+        "sourceUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/main/packages/jellyzer-0.0.2.zip",
+        "checksum": "a10d7b6f878f886199568d569beb32f4",
+        "timestamp": "2026-03-19T19:08:22Z",
         "changelog": "Fixed prompt placeholder substitution to use {input-language} and {output-language} format."
       }
     ]
