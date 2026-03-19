@@ -3,6 +3,7 @@ name: Develop Channel
 on:
   push:
     branches:
+      - main
       - develop
   workflow_dispatch:
 
@@ -15,11 +16,15 @@ permissions:
 
 jobs:
   publish-dev:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: false
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -36,6 +41,7 @@ jobs:
         run: |
           SHORT_SHA="${GITHUB_SHA::7}"
           BASE_VERSION="$(awk -F '"' '/^version:/ { print $2; exit }' build.yaml)"
+          BRANCH_NAME="${GITHUB_REF_NAME}"
 
           if [[ -z "${BASE_VERSION}" ]]; then
             echo "Could not read version from build.yaml"
@@ -67,59 +73,86 @@ jobs:
           (cd artifacts && zip -r "${ZIP_NAME}" Jellyzer)
           (cd artifacts && md5sum "${ZIP_NAME}" > "${ZIP_NAME%.zip}.md5")
 
+          if [[ "${BRANCH_NAME}" == "main" ]]; then
+            REPOSITORY_FILE="repository.json"
+            PUBLISHED_ZIP="jellyzer-main-latest.zip"
+            PUBLISHED_MD5="jellyzer-main-latest.md5"
+          else
+            REPOSITORY_FILE="repository-dev.json"
+            PUBLISHED_ZIP="jellyzer-develop-latest.zip"
+            PUBLISHED_MD5="jellyzer-develop-latest.md5"
+          fi
+
           echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
           echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_ENV
+          echo "DEV_VERSION=${DEV_VERSION}" >> $GITHUB_ENV
+          echo "BRANCH_NAME=${BRANCH_NAME}" >> $GITHUB_ENV
+          echo "REPOSITORY_FILE=${REPOSITORY_FILE}" >> $GITHUB_ENV
+          echo "PUBLISHED_ZIP=${PUBLISHED_ZIP}" >> $GITHUB_ENV
+          echo "PUBLISHED_MD5=${PUBLISHED_MD5}" >> $GITHUB_ENV
 
-      - name: Create or replace rolling develop prerelease
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release delete develop --cleanup-tag --yes || true
-          gh release create develop artifacts/${ZIP_NAME} artifacts/${ZIP_NAME%.zip}.md5 \
-            --prerelease \
-            --title "develop-${SHORT_SHA}" \
-            --notes "Rolling develop build from ${GITHUB_SHA}" \
-            --target "${GITHUB_SHA}"
-
-      - name: Ensure gh-pages branch and manifests exist
+      - name: Publish develop repository manifest
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
-            git fetch origin gh-pages
-            git checkout -B gh-pages origin/gh-pages
-          else
-            git checkout --orphan gh-pages
-            git rm -rf . || true
-            echo "# Jellyzer plugin repository branch" > README.md
-            git add README.md
-          fi
+          git fetch --no-tags origin "refs/heads/${BRANCH_NAME}:refs/remotes/origin/${BRANCH_NAME}"
+          git tag -d "${BRANCH_NAME}" || true
+          git checkout -B "${BRANCH_NAME}" "origin/${BRANCH_NAME}"
 
-          if [ ! -f repository.json ]; then
-            echo "[]" > repository.json
-            git add repository.json
-          fi
+          mkdir -p packages
+          cp "artifacts/${ZIP_NAME}" "packages/${PUBLISHED_ZIP}"
+          cp "artifacts/${ZIP_NAME%.zip}.md5" "packages/${PUBLISHED_MD5}"
 
-          if [ ! -f repository-dev.json ]; then
-            echo "[]" > repository-dev.json
-            git add repository-dev.json
-          fi
+          CHECKSUM="$(awk '{print $1}' "packages/${PUBLISHED_MD5}")"
+          SOURCE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/refs/heads/${BRANCH_NAME}/packages/${PUBLISHED_ZIP}"
+          IMAGE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/refs/heads/${BRANCH_NAME}/Jellyzer/logo.png"
+          TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+          NAME="$(jq -r '.name' Jellyzer/meta.json)"
+          GUID="$(jq -r '.guid' Jellyzer/meta.json | tr '[:lower:]' '[:upper:]')"
+          OVERVIEW="$(jq -r '.overview' Jellyzer/meta.json)"
+          DESCRIPTION="$(jq -r '.description' Jellyzer/meta.json)"
+          OWNER="$(jq -r '.owner' Jellyzer/meta.json)"
+          CATEGORY="$(jq -r '.category' Jellyzer/meta.json)"
+          TARGET_ABI="$(jq -r '.targetAbi' Jellyzer/meta.json)"
+
+          jq -n \
+            --arg name "${NAME}" \
+            --arg guid "${GUID}" \
+            --arg overview "${OVERVIEW}" \
+            --arg description "${DESCRIPTION}" \
+            --arg owner "${OWNER}" \
+            --arg category "${CATEGORY}" \
+            --arg targetAbi "${TARGET_ABI}" \
+            --arg version "${DEV_VERSION}" \
+            --arg timestamp "${TIMESTAMP}" \
+            --arg checksum "${CHECKSUM}" \
+            --arg sourceUrl "${SOURCE_URL}" \
+            --arg imageUrl "${IMAGE_URL}" \
+            --arg changelog "Rolling develop build from ${GITHUB_SHA}" \
+            '[{
+              name: $name,
+              guid: $guid,
+              overview: $overview,
+              description: $description,
+              owner: $owner,
+              category: $category,
+              imageUrl: $imageUrl,
+              versions: [{
+                version: $version,
+                targetAbi: $targetAbi,
+                sourceUrl: $sourceUrl,
+                checksum: $checksum,
+                timestamp: $timestamp,
+                changelog: $changelog
+              }]
+            }]' > "${REPOSITORY_FILE}"
+
+          git add "${REPOSITORY_FILE}" "packages/${PUBLISHED_ZIP}" "packages/${PUBLISHED_MD5}"
           if ! git diff --cached --quiet; then
-            git commit -m "Initialize gh-pages manifest files"
-            git push origin gh-pages
+            git commit -m "ci: update ${REPOSITORY_FILE} for ${SHORT_SHA} [skip ci]"
+            git push origin "HEAD:refs/heads/${BRANCH_NAME}"
           else
-            echo "gh-pages manifests already initialized."
+            echo "${REPOSITORY_FILE} already up-to-date."
           fi
-
-          git checkout --force "${GITHUB_SHA}"
-
-      - name: Regenerate develop repository manifest
-        uses: Kevinjil/jellyfin-plugin-repo-action@v0.4.3
-        with:
-          githubToken: ${{ secrets.GITHUB_TOKEN }}
-          repository: ${{ github.repository }}
-          pagesBranch: gh-pages
-          pagesFile: repository-dev.json
-          ignorePrereleases: "false"

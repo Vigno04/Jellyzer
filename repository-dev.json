@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Jellyzer",
+    "guid": "3F8A2B1C-4D5E-6F70-8192-A3B4C5D6E7F8",
+    "overview": "Jellyzer plugin for Jellyfin.",
+    "description": "Jellyzer — manage and configure your Jellyfin library.",
+    "owner": "Vigno04",
+    "category": "General",
+    "versions": [
+      {
+        "version": "0.1.0.4",
+        "targetAbi": "10.11.6.0",
+        "sourceUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/develop/packages/jellyzer-develop-latest.zip",
+        "checksum": "d89f5b5661d1b5fcd6f1a27bc232ae2d",
+        "timestamp": "2026-03-19T13:14:16Z",
+        "changelog": "Rolling develop build from c3768b841a243b305d16dd0524cfbf7c0c521f86"
+      }
+    ]
+  }
+]
