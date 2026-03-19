@@ -1,21 +1,19 @@
-[
-  {
-    "name": "Jellyzer",
-    "guid": "3F8A2B1C-4D5E-6F70-8192-A3B4C5D6E7F8",
-    "overview": "Jellyzer plugin for Jellyfin.",
-    "description": "Jellyzer — Jellyfin plugin that helps localize written metadata in your preferred language.",
-    "owner": "Vigno04",
-    "category": "General",
-    "imageUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/main/Jellyzer/logo.png",
-    "versions": [
-      {
-        "version": "0.0.2.11",
-        "targetAbi": "10.11.6.0",
-        "sourceUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/main/packages/jellyzer-main-latest.zip",
-        "checksum": "755af122490b55303852fcfde4f0ac36",
-        "timestamp": "2026-03-19T18:57:35Z",
-        "changelog": "Rolling develop build from 27660b0d999e9abbc5196e620bca13afbb90b30d"
-      }
-    ]
-  }
-]
+{
+  "name": "Jellyzer",
+  "guid": "3F8A2B1C-4D5E-6F70-8192-A3B4C5D6E7F8",
+  "overview": "Jellyzer plugin for Jellyfin.",
+  "description": "Jellyzer — Jellyfin plugin that helps localize written metadata in your preferred language.",
+  "owner": "Vigno04",
+  "category": "General",
+  "imageUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/main/Jellyzer/logo.png",
+  "versions": [
+    {
+      "version": "0.0.2.0",
+      "targetAbi": "10.11.6.0",
+      "sourceUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/main/packages/jellyzer-main-latest.zip",
+      "checksum": "e54ec8ebab4f320ec01e3949d98eae19",
+      "timestamp": "2026-03-19T19:00:13Z",
+      "changelog": "Fixed prompt placeholder substitution to use {input-language} and {output-language} format."
+    }
+  ]
+}

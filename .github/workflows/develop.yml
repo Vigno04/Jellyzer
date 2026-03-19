@@ -1,4 +1,4 @@
-name: Develop Channel
+name: Publish Plugin Manifests
 
 on:
   push:
@@ -8,15 +8,128 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: develop-channel
+  group: publish-plugin-${{ github.ref_name }}
   cancel-in-progress: true
 
 permissions:
   contents: write
 
 jobs:
-  publish-dev:
-    if: github.actor != 'github-actions[bot]'
+  publish-main:
+    if: github.actor != 'github-actions[bot]' && github.ref_name == 'main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: false
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore
+        run: dotnet restore Jellyzer/Jellyzer.csproj
+
+      - name: Build
+        run: dotnet build Jellyzer/Jellyzer.csproj -c Release --no-restore
+
+      - name: Package stable assets
+        run: |
+          BASE_VERSION="$(awk -F '"' '/^version:/ { print $2; exit }' build.yaml)"
+
+          if [[ "${BASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            STABLE_VERSION="${BASE_VERSION}.0"
+          elif [[ "${BASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            STABLE_VERSION="${BASE_VERSION}"
+          else
+            echo "Unsupported version format in build.yaml: ${BASE_VERSION}"
+            exit 1
+          fi
+
+          mkdir -p artifacts/package
+          cp Jellyzer/bin/Release/net9.0/Jellyzer.dll artifacts/package/
+
+          jq --arg version "${STABLE_VERSION}" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '.version = $version | .timestamp = $ts' \
+            Jellyzer/meta.json > artifacts/package/meta.json
+
+          if [ -f Jellyzer/logo.png ]; then
+            cp Jellyzer/logo.png artifacts/package/
+          fi
+
+          (cd artifacts/package && zip -r ../jellyzer-main-latest.zip .)
+          (cd artifacts && md5sum jellyzer-main-latest.zip > jellyzer-main-latest.md5)
+
+          CHECKSUM="$(awk '{print $1}' artifacts/jellyzer-main-latest.md5)"
+          TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          NAME="$(jq -r '.name' Jellyzer/meta.json)"
+          GUID="$(jq -r '.guid' Jellyzer/meta.json | tr '[:lower:]' '[:upper:]')"
+          OVERVIEW="$(jq -r '.overview' Jellyzer/meta.json)"
+          DESCRIPTION="$(jq -r '.description' Jellyzer/meta.json)"
+          OWNER="$(jq -r '.owner' Jellyzer/meta.json)"
+          CATEGORY="$(jq -r '.category' Jellyzer/meta.json)"
+          TARGET_ABI="$(jq -r '.targetAbi' Jellyzer/meta.json)"
+          CHANGELOG="$(awk '/^changelog:/ {getline; sub(/^  /, ""); print; exit}' build.yaml)"
+
+          SOURCE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/refs/heads/main/packages/jellyzer-main-latest.zip"
+          IMAGE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/refs/heads/main/Jellyzer/logo.png"
+
+          jq -n \
+            --arg name "${NAME}" \
+            --arg guid "${GUID}" \
+            --arg overview "${OVERVIEW}" \
+            --arg description "${DESCRIPTION}" \
+            --arg owner "${OWNER}" \
+            --arg category "${CATEGORY}" \
+            --arg targetAbi "${TARGET_ABI}" \
+            --arg version "${STABLE_VERSION}" \
+            --arg timestamp "${TIMESTAMP}" \
+            --arg checksum "${CHECKSUM}" \
+            --arg sourceUrl "${SOURCE_URL}" \
+            --arg imageUrl "${IMAGE_URL}" \
+            --arg changelog "${CHANGELOG}" \
+            '[{
+              name: $name,
+              guid: $guid,
+              overview: $overview,
+              description: $description,
+              owner: $owner,
+              category: $category,
+              imageUrl: $imageUrl,
+              versions: [{
+                version: $version,
+                targetAbi: $targetAbi,
+                sourceUrl: $sourceUrl,
+                checksum: $checksum,
+                timestamp: $timestamp,
+                changelog: $changelog
+              }]
+            }]' > repository.json
+
+      - name: Commit published main artifacts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          mkdir -p packages
+          cp artifacts/jellyzer-main-latest.zip packages/jellyzer-main-latest.zip
+          cp artifacts/jellyzer-main-latest.md5 packages/jellyzer-main-latest.md5
+
+          git add repository.json packages/jellyzer-main-latest.zip packages/jellyzer-main-latest.md5
+          if ! git diff --cached --quiet; then
+            git commit -m "ci: update stable repository manifest [skip ci]"
+            git push origin HEAD:main
+          else
+            echo "Stable files already up-to-date."
+          fi
+
+  publish-develop:
+    if: github.actor != 'github-actions[bot]' && github.ref_name == 'develop'
     runs-on: ubuntu-latest
 
     steps:
@@ -41,12 +154,6 @@ jobs:
         run: |
           SHORT_SHA="${GITHUB_SHA::7}"
           BASE_VERSION="$(awk -F '"' '/^version:/ { print $2; exit }' build.yaml)"
-          BRANCH_NAME="${GITHUB_REF_NAME}"
-
-          if [[ -z "${BASE_VERSION}" ]]; then
-            echo "Could not read version from build.yaml"
-            exit 1
-          fi
 
           if [[ "${BASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             DEV_VERSION="${BASE_VERSION}.${GITHUB_RUN_NUMBER}"
@@ -57,56 +164,21 @@ jobs:
             exit 1
           fi
 
-          mkdir -p artifacts/Jellyzer
-          cp Jellyzer/bin/Release/net9.0/Jellyzer.dll artifacts/Jellyzer/
+          mkdir -p artifacts/package
+          cp Jellyzer/bin/Release/net9.0/Jellyzer.dll artifacts/package/
 
           jq --arg version "${DEV_VERSION}" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg sha "${SHORT_SHA}" \
             '.version = $version | .timestamp = $ts | .changelog = ("- Develop build " + $sha)' \
-            Jellyzer/meta.json > artifacts/Jellyzer/meta.json
+            Jellyzer/meta.json > artifacts/package/meta.json
 
           if [ -f Jellyzer/logo.png ]; then
-            cp Jellyzer/logo.png artifacts/Jellyzer/
+            cp Jellyzer/logo.png artifacts/package/
           fi
 
-          ZIP_NAME="jellyzer-develop-${SHORT_SHA}.zip"
+          (cd artifacts/package && zip -r ../jellyzer-develop-latest.zip .)
+          (cd artifacts && md5sum jellyzer-develop-latest.zip > jellyzer-develop-latest.md5)
 
-          (cd artifacts && zip -r "${ZIP_NAME}" Jellyzer)
-          (cd artifacts && md5sum "${ZIP_NAME}" > "${ZIP_NAME%.zip}.md5")
-
-          if [[ "${BRANCH_NAME}" == "main" ]]; then
-            REPOSITORY_FILE="repository.json"
-            PUBLISHED_ZIP="jellyzer-main-latest.zip"
-            PUBLISHED_MD5="jellyzer-main-latest.md5"
-          else
-            REPOSITORY_FILE="repository-dev.json"
-            PUBLISHED_ZIP="jellyzer-develop-latest.zip"
-            PUBLISHED_MD5="jellyzer-develop-latest.md5"
-          fi
-
-          echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
-          echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_ENV
-          echo "DEV_VERSION=${DEV_VERSION}" >> $GITHUB_ENV
-          echo "BRANCH_NAME=${BRANCH_NAME}" >> $GITHUB_ENV
-          echo "REPOSITORY_FILE=${REPOSITORY_FILE}" >> $GITHUB_ENV
-          echo "PUBLISHED_ZIP=${PUBLISHED_ZIP}" >> $GITHUB_ENV
-          echo "PUBLISHED_MD5=${PUBLISHED_MD5}" >> $GITHUB_ENV
-
-      - name: Publish develop repository manifest
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git fetch --no-tags origin "refs/heads/${BRANCH_NAME}:refs/remotes/origin/${BRANCH_NAME}"
-          git tag -d "${BRANCH_NAME}" || true
-          git checkout -B "${BRANCH_NAME}" "origin/${BRANCH_NAME}"
-
-          mkdir -p packages
-          cp "artifacts/${ZIP_NAME}" "packages/${PUBLISHED_ZIP}"
-          cp "artifacts/${ZIP_NAME%.zip}.md5" "packages/${PUBLISHED_MD5}"
-
-          CHECKSUM="$(awk '{print $1}' "packages/${PUBLISHED_MD5}")"
-          SOURCE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/refs/heads/${BRANCH_NAME}/packages/${PUBLISHED_ZIP}"
-          IMAGE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/refs/heads/${BRANCH_NAME}/Jellyzer/logo.png"
+          CHECKSUM="$(awk '{print $1}' artifacts/jellyzer-develop-latest.md5)"
           TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
           NAME="$(jq -r '.name' Jellyzer/meta.json)"
@@ -116,6 +188,9 @@ jobs:
           OWNER="$(jq -r '.owner' Jellyzer/meta.json)"
           CATEGORY="$(jq -r '.category' Jellyzer/meta.json)"
           TARGET_ABI="$(jq -r '.targetAbi' Jellyzer/meta.json)"
+
+          SOURCE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/refs/heads/develop/packages/jellyzer-develop-latest.zip"
+          IMAGE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/refs/heads/develop/Jellyzer/logo.png"
 
           jq -n \
             --arg name "${NAME}" \
@@ -147,12 +222,21 @@ jobs:
                 timestamp: $timestamp,
                 changelog: $changelog
               }]
-            }]' > "${REPOSITORY_FILE}"
+            }]' > repository-dev.json
 
-          git add "${REPOSITORY_FILE}" "packages/${PUBLISHED_ZIP}" "packages/${PUBLISHED_MD5}"
+      - name: Commit published develop artifacts
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          mkdir -p packages
+          cp artifacts/jellyzer-develop-latest.zip packages/jellyzer-develop-latest.zip
+          cp artifacts/jellyzer-develop-latest.md5 packages/jellyzer-develop-latest.md5
+
+          git add repository-dev.json packages/jellyzer-develop-latest.zip packages/jellyzer-develop-latest.md5
           if ! git diff --cached --quiet; then
-            git commit -m "ci: update ${REPOSITORY_FILE} for ${SHORT_SHA} [skip ci]"
-            git push origin "HEAD:refs/heads/${BRANCH_NAME}"
+            git commit -m "ci: update repository-dev.json [skip ci]"
+            git push origin HEAD:develop
           else
-            echo "${REPOSITORY_FILE} already up-to-date."
+            echo "Develop files already up-to-date."
           fi
