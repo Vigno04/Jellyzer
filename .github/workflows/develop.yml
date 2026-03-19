@@ -1,0 +1,125 @@
+name: Develop Channel
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+
+concurrency:
+  group: develop-channel
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish-dev:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore
+        run: dotnet restore Jellyzer/Jellyzer.csproj
+
+      - name: Build
+        run: dotnet build Jellyzer/Jellyzer.csproj -c Release --no-restore
+
+      - name: Package develop assets
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          BASE_VERSION="$(awk -F '"' '/^version:/ { print $2; exit }' build.yaml)"
+
+          if [[ -z "${BASE_VERSION}" ]]; then
+            echo "Could not read version from build.yaml"
+            exit 1
+          fi
+
+          if [[ "${BASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            DEV_VERSION="${BASE_VERSION}.${GITHUB_RUN_NUMBER}"
+          elif [[ "${BASE_VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            DEV_VERSION="$(echo "${BASE_VERSION}" | awk -F. -v run="${GITHUB_RUN_NUMBER}" '{ print $1 "." $2 "." $3 "." run }')"
+          else
+            echo "Unsupported version format in build.yaml: ${BASE_VERSION}"
+            exit 1
+          fi
+
+          mkdir -p artifacts/Jellyzer
+          cp Jellyzer/bin/Release/net9.0/Jellyzer.dll artifacts/Jellyzer/
+
+          jq --arg version "${DEV_VERSION}" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg sha "${SHORT_SHA}" \
+            '.version = $version | .timestamp = $ts | .changelog = ("- Develop build " + $sha)' \
+            Jellyzer/meta.json > artifacts/Jellyzer/meta.json
+
+          if [ -f Jellyzer/logo.png ]; then
+            cp Jellyzer/logo.png artifacts/Jellyzer/
+          fi
+
+          ZIP_NAME="jellyzer-develop-${SHORT_SHA}.zip"
+
+          (cd artifacts && zip -r "${ZIP_NAME}" Jellyzer)
+          (cd artifacts && md5sum "${ZIP_NAME}" > "${ZIP_NAME%.zip}.md5")
+
+          echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
+          echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_ENV
+
+      - name: Create or replace rolling develop prerelease
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete develop --cleanup-tag --yes || true
+          gh release create develop artifacts/${ZIP_NAME} artifacts/${ZIP_NAME%.zip}.md5 \
+            --prerelease \
+            --title "develop-${SHORT_SHA}" \
+            --notes "Rolling develop build from ${GITHUB_SHA}" \
+            --target "${GITHUB_SHA}"
+
+      - name: Ensure gh-pages branch and manifests exist
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            git fetch origin gh-pages
+            git checkout -B gh-pages origin/gh-pages
+          else
+            git checkout --orphan gh-pages
+            git rm -rf . || true
+            echo "# Jellyzer plugin repository branch" > README.md
+            git add README.md
+          fi
+
+          if [ ! -f repository.json ]; then
+            echo "[]" > repository.json
+            git add repository.json
+          fi
+
+          if [ ! -f repository-dev.json ]; then
+            echo "[]" > repository-dev.json
+            git add repository-dev.json
+          fi
+
+          if ! git diff --cached --quiet; then
+            git commit -m "Initialize gh-pages manifest files"
+            git push origin gh-pages
+          else
+            echo "gh-pages manifests already initialized."
+          fi
+
+          git checkout --force "${GITHUB_SHA}"
+
+      - name: Regenerate develop repository manifest
+        uses: Kevinjil/jellyfin-plugin-repo-action@v0.4.3
+        with:
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          pagesBranch: gh-pages
+          pagesFile: repository-dev.json
+          ignorePrereleases: "false"

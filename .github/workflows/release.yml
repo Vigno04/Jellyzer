@@ -1,0 +1,108 @@
+name: Release
+
+on:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Restore
+        run: dotnet restore Jellyzer/Jellyzer.csproj
+
+      - name: Build
+        run: dotnet build Jellyzer/Jellyzer.csproj -c Release --no-restore
+
+      - name: Package release assets
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+
+          if [[ "${TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            RELEASE_VERSION="${TAG}.0"
+          elif [[ "${TAG}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            RELEASE_VERSION="${TAG}"
+          else
+            echo "Release tag must be 3 or 4-part semver, got: ${GITHUB_REF_NAME}"
+            exit 1
+          fi
+
+          mkdir -p artifacts/Jellyzer
+          cp Jellyzer/bin/Release/net9.0/Jellyzer.dll artifacts/Jellyzer/
+
+          jq --arg version "${RELEASE_VERSION}" --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            '.version = $version | .timestamp = $ts' \
+            Jellyzer/meta.json > artifacts/Jellyzer/meta.json
+
+          if [ -f Jellyzer/logo.png ]; then
+            cp Jellyzer/logo.png artifacts/Jellyzer/
+          fi
+
+          ZIP_NAME="jellyzer-${TAG}.zip"
+
+          (cd artifacts && zip -r "${ZIP_NAME}" Jellyzer)
+          (cd artifacts && md5sum "${ZIP_NAME}" > "${ZIP_NAME%.zip}.md5")
+
+      - name: Upload assets to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/*.zip
+            artifacts/*.md5
+          overwrite_files: true
+
+      - name: Ensure gh-pages branch and manifests exist
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            git fetch origin gh-pages
+            git checkout -B gh-pages origin/gh-pages
+          else
+            git checkout --orphan gh-pages
+            git rm -rf . || true
+            echo "# Jellyzer plugin repository branch" > README.md
+            git add README.md
+          fi
+
+          if [ ! -f repository.json ]; then
+            echo "[]" > repository.json
+            git add repository.json
+          fi
+
+          if [ ! -f repository-dev.json ]; then
+            echo "[]" > repository-dev.json
+            git add repository-dev.json
+          fi
+
+          if ! git diff --cached --quiet; then
+            git commit -m "Initialize gh-pages manifest files"
+            git push origin gh-pages
+          else
+            echo "gh-pages manifests already initialized."
+          fi
+
+          git checkout --force "${GITHUB_SHA}"
+
+      - name: Regenerate stable repository manifest
+        uses: Kevinjil/jellyfin-plugin-repo-action@v0.4.3
+        with:
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          pagesBranch: gh-pages
+          pagesFile: repository.json
+          ignorePrereleases: "true"

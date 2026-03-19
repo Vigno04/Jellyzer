@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jellyzer</title>
+  <style>
+    .jellyzer-card {
+      border: 1px solid rgba(155, 155, 155, 0.35);
+      border-radius: 4px;
+      padding: 1em 1.25em 1.25em;
+      margin-bottom: 1.25em;
+    }
+
+    .jellyzer-card > legend {
+      font-size: 1.05em;
+      font-weight: 600;
+      padding: 0 0.35em;
+    }
+
+    .hidden { display: none !important; }
+
+    details > summary {
+      cursor: pointer;
+      padding: 10px;
+      width: inherit;
+      margin: auto;
+      border: none;
+      text-align: center;
+      font-size: 1em;
+      outline: 2px solid rgba(155, 155, 155, 0.5);
+    }
+
+    details.advanced-settings {
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      padding: 0;
+      margin-bottom: 1em;
+    }
+    details.advanced-settings > summary {
+      font-weight: 500;
+      user-select: none;
+    }
+    details.advanced-settings[open] > summary {
+      margin-bottom: 0.75em;
+    }
+
+    .option-categories {
+      display: grid;
+      gap: 0.5em;
+    }
+
+    .option-category-content {
+      padding: 0.5em 0.25em 0.75em;
+    }
+
+    .option-separator {
+      border-top: 1px dashed rgba(255,255,255,0.2);
+      margin: 1em 0;
+      padding-top: 1em;
+    }
+  </style>
+</head>
+
+<body>
+  <div data-role="page" id="jellyzerConfigPage" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+    <div data-role="content">
+      <div class="content-primary">
+        <form id="jellyzerForm">
+          <div class="verticalSection">
+            <div class="sectionTitleContainer flex align-items-center">
+              <h2 class="sectionTitle">Jellyzer Configuration</h2>
+            </div>
+          </div>
+
+          <!-- Section 1: Library Item Selection -->
+          <fieldset class="jellyzer-card verticalSection-extrabottompadding">
+            <legend>Translation Target</legend>
+            
+            <div class="inputContainer" style="margin-bottom: 1em;">
+              <label class="inputLabel" for="txtItemSearch">Search Library:</label>
+              <input type="text" id="txtItemSearch" is="emby-input" class="emby-input" placeholder="Search movies and series..." />
+            </div>
+
+            <div class="selectContainer">
+              <label class="selectLabel" for="selLibraryItem">Selected film / series:</label>
+              <select id="selLibraryItem" is="emby-select" class="emby-select-withcolor emby-select" style="width: 100%;">
+                <option value="">-- Loading library... --</option>
+              </select>
+            </div>
+
+            <!-- Series specifics -->
+            <div id="seriesContainer" class="hidden" style="margin-top: 1.5em; padding-top: 1em; border-top: 1px dashed rgba(255,255,255,0.2);">
+              <div class="selectContainer">
+                <label class="selectLabel" for="selSeason">Select Season (Optional):</label>
+                <select id="selSeason" is="emby-select" class="emby-select-withcolor emby-select" style="width: 100%;">
+                  <option value="">-- All Seasons --</option>
+                </select>
+                <div class="fieldDescription">If no season is selected, translates all episodes in the series.</div>
+              </div>
+
+              <div class="selectContainer" id="episodeWrapper">
+                <label class="selectLabel" for="selEpisode">Select Episode (Optional):</label>
+                <select id="selEpisode" is="emby-select" class="emby-select-withcolor emby-select" style="width: 100%;">
+                  <option value="">-- All Episodes --</option>
+                </select>
+                <div class="fieldDescription">If no episode is selected, translates all episodes inside the target above.</div>
+              </div>
+            </div>
+          </fieldset>
+
+          <!-- Section 2: Translation Options (Languages) -->
+          <fieldset class="jellyzer-card verticalSection-extrabottompadding">
+            <legend>Options & Languages</legend>
+            
+            <div style="display: flex; gap: 1.5em; flex-wrap: wrap; margin-bottom: 1.5em;">
+              <div class="inputContainer" style="flex: 1; min-width: 200px;">
+                <label class="inputLabel" for="txtInputLanguage">Input Language:</label>
+                <input type="text" id="txtInputLanguage" is="emby-input" class="emby-input" placeholder="e.g. ja, en, English..." />
+                <div class="fieldDescription">Automatically fetched from media if available.</div>
+              </div>
+              
+              <div class="inputContainer" style="flex: 1; min-width: 200px;">
+                <label class="inputLabel" for="txtOutputLanguage">Output Language:</label>
+                <input type="text" id="txtOutputLanguage" is="emby-input" class="emby-input" placeholder="e.g. it, Italian..." />
+                <div class="fieldDescription">Language to translate the metadata into.</div>
+              </div>
+            </div>
+
+            <div class="checkboxContainer checkboxContainer-withDescription">
+              <label>
+                <input is="emby-checkbox" type="checkbox" id="chkTranslateTitle" />
+                <span>Translate Main Title</span>
+              </label>
+            </div>
+
+            <div class="checkboxContainer checkboxContainer-withDescription">
+              <label>
+                <input is="emby-checkbox" type="checkbox" id="chkTranslateDescription" />
+                <span>Translate Description</span>
+              </label>
+            </div>
+
+            <div id="seriesOptionsContainer" class="hidden">
+              <div class="checkboxContainer checkboxContainer-withDescription">
+                <label>
+                  <input is="emby-checkbox" type="checkbox" id="chkTranslateSeasonTitle" />
+                  <span>Translate Season Titles</span>
+                </label>
+              </div>
+              <div class="checkboxContainer checkboxContainer-withDescription">
+                <label>
+                  <input is="emby-checkbox" type="checkbox" id="chkTranslateEpisodeTitle" />
+                  <span>Translate Episode Titles</span>
+                </label>
+              </div>
+            </div>
+          </fieldset>
+
+          <!-- Section 3: Advanced Option Categories -->
+          <fieldset class="jellyzer-card verticalSection-extrabottompadding">
+            <legend>Advanced Options</legend>
+
+            <div class="option-categories">
+              <details class="advanced-settings" open>
+                <summary>OpenAI / LLM Settings</summary>
+                <div class="option-category-content">
+                  <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="txtOpenApiDomain">API Domain:</label>
+                    <input type="text" id="txtOpenApiDomain" is="emby-input" class="emby-input" placeholder="http://localhost:11434/v1" />
+                    <div class="fieldDescription">The base URL for the OpenAI-compatible API (e.g., LM Studio, Ollama).</div>
+                  </div>
+
+                  <div class="inputContainer" style="display: flex; gap: 1em; align-items: flex-end;">
+                    <div style="flex-grow: 1;">
+                      <label class="selectLabel" for="selOpenApiModel">Available Model:</label>
+                      <select id="selOpenApiModel" is="emby-select" class="emby-select-withcolor emby-select" style="width: 100%;">
+                        <option value="">-- Enter domain and fetch models --</option>
+                      </select>
+                      <div class="fieldDescription">Select the model returned by your API.</div>
+                    </div>
+                    <button type="button" id="btnFetchModels" class="raised emby-button" style="margin-bottom: 2em; min-width: 120px;">
+                      Fetch Models
+                    </button>
+                  </div>
+                </div>
+              </details>
+
+              <details class="advanced-settings">
+                <summary>Prompt Settings</summary>
+                <div class="option-category-content">
+                  <div class="inputContainer" style="margin-top: 1em;">
+                    <label class="inputLabel" for="txtSystemPrompt">Translation Prompt:</label>
+                    <textarea id="txtSystemPrompt" is="emby-input" class="emby-input" rows="3" style="resize: vertical;">You are a professional translator. Translate the text from [INPUT_LANGUAGE] to [OUTPUT_LANGUAGE]. Output ONLY the exact translation with no quotes, explanations, or additional text.</textarea>
+                    <div class="fieldDescription">System prompt sent to the LLM. <code>[INPUT_LANGUAGE]</code> and <code>[OUTPUT_LANGUAGE]</code> will be replaced automatically.</div>
+                  </div>
+                </div>
+              </details>
+
+              <details class="advanced-settings">
+                <summary>Debug Options</summary>
+                <div class="option-category-content">
+                  <div class="checkboxContainer checkboxContainer-withDescription option-separator">
+                    <label>
+                      <input is="emby-checkbox" type="checkbox" id="chkEnableDebug" />
+                      <span>Enable Debug Logs</span>
+                    </label>
+                    <div class="fieldDescription">If activated, the translation runner will print the exact prompt and LLM output in the console window below.</div>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </fieldset>
+
+          <!-- Save & Run buttons -->
+          <div class="verticalSection" style="margin-top: 2em; display: flex; gap: 1em; align-items: center;">
+            <button id="btnSave" is="emby-button" type="submit" class="raised button-submit block emby-button" style="background: #00a4dc; color: #fff; flex: 1;">
+              <span>Save Configuration</span>
+            </button>
+            <button id="btnRunTranslation" type="button" is="emby-button" class="raised emby-button" style="background: #4caf50; color: #fff; flex: 1;">
+              <span>▶ Run Translation</span>
+            </button>
+          </div>
+          
+          <div id="translationProgress" class="hidden" style="margin-top: 1em; padding: 1em; background: rgba(0,0,0,0.3); border-radius: 4px; border-left: 4px solid #4caf50;">
+            <div style="font-weight: bold; margin-bottom: 0.5em;">Translation Progress</div>
+            <div id="progressLog" style="font-family: monospace; font-size: 0.9em; opacity: 0.8; max-height: 150px; overflow-y: auto;"></div>
+          </div>
+
+        </form>
+      </div>
+    </div>
+
+    <script type="text/javascript">
+      (function () {
+        const PLUGIN_ID = "3f8a2b1c-4d5e-6f70-8192-a3b4c5d6e7f8";
+
+        const page          = document.querySelector('#jellyzerConfigPage');
+        const form          = document.querySelector('#jellyzerForm');
+        
+        const selItem       = document.querySelector('#selLibraryItem');
+        const txtSearch     = document.querySelector('#txtItemSearch');
+        const seriesCont    = document.querySelector('#seriesContainer');
+        const selSeason     = document.querySelector('#selSeason');
+        const selEpisode    = document.querySelector('#selEpisode');
+
+        const txtDomain     = document.querySelector('#txtOpenApiDomain');
+        const selModel      = document.querySelector('#selOpenApiModel');
+        const btnFetch        = document.querySelector('#btnFetchModels');
+        const btnRun          = document.querySelector('#btnRunTranslation');
+        const progressDiv     = document.querySelector('#translationProgress');
+        const progressLog     = document.querySelector('#progressLog');
+
+        const chkTitle            = document.querySelector('#chkTranslateTitle');
+        const chkDesc             = document.querySelector('#chkTranslateDescription');
+        const seriesOptsCont      = document.querySelector('#seriesOptionsContainer');
+        const chkSeasonTitle      = document.querySelector('#chkTranslateSeasonTitle');
+        const chkEpisodeTitle     = document.querySelector('#chkTranslateEpisodeTitle');
+        const chkEnableDebug      = document.querySelector('#chkEnableDebug');
+
+        const txtInputLanguage    = document.querySelector('#txtInputLanguage');
+        const txtOutputLanguage   = document.querySelector('#txtOutputLanguage');
+        const txtSystemPrompt     = document.querySelector('#txtSystemPrompt');
+
+        let allItems = [];
+        let didAutoPopulateLang = false;
+
+        function getFilteredItems() {
+          const q = (txtSearch.value || '').toLowerCase();
+          return allItems.filter(item => {
+            return !q || item.Name.toLowerCase().includes(q);
+          });
+        }
+
+        async function populateDropdown(selectedId) {
+          const filtered = getFilteredItems();
+          selItem.innerHTML = '';
+
+          const placeholder = document.createElement('option');
+          placeholder.value = '';
+          placeholder.textContent = filtered.length === 0 ? '-- No items found --' : '-- Select a film or series --';
+          selItem.appendChild(placeholder);
+
+          filtered.forEach(item => {
+            const opt = document.createElement('option');
+            opt.value = item.Id;
+            const year = item.Year ? " (" + item.Year + ")" : "";
+            const badge = item.Type === "Movie" ? "🎬" : "📺";
+            opt.textContent = badge + " " + item.Name + year;
+            opt.dataset.type = item.Type;
+            opt.dataset.name = item.Name;
+            opt.dataset.language = item.Language;
+            selItem.appendChild(opt);
+          });
+
+          if (selectedId) selItem.value = selectedId;
+        }
+
+        async function loadLibraryItems(savedId) {
+          try {
+            selItem.innerHTML = '<option value="">-- Loading library... --</option>';
+            const url = window.ApiClient.getUrl('jellyzer/library-items');
+            const items = await window.ApiClient.getJSON(url);
+            allItems = items || [];
+            await populateDropdown(savedId);
+          } catch (err) {
+            console.error('Jellyzer: failed to load library items', err);
+            selItem.innerHTML = '<option value="">-- Error loading library --</option>';
+          }
+        }
+
+        async function onLibraryItemChanged(savedSeason, savedEpisode) {
+            const opt = selItem.options[selItem.selectedIndex];
+            
+            // Auto update input language on selection (only if not typed by user manually previously or user just selected)
+            if (opt && opt.dataset.language && !didAutoPopulateLang) {
+                txtInputLanguage.value = opt.dataset.language;
+            }
+
+            if (!opt || opt.dataset.type !== "Series") {
+                seriesCont.classList.add('hidden');
+                seriesOptsCont.classList.add('hidden');
+                return;
+            }
+            seriesCont.classList.remove('hidden');
+            seriesOptsCont.classList.remove('hidden');
+            
+            await loadSeasons(opt.value, savedSeason);
+            await onSeasonChanged();
+            if (selSeason.value && savedEpisode) {
+                selEpisode.value = savedEpisode;
+            }
+        }
+
+        async function loadSeasons(seriesId, selectedSeason) {
+            selSeason.innerHTML = '<option value="">-- Loading seasons... --</option>';
+            try {
+                const url = window.ApiClient.getUrl('jellyzer/seasons?seriesId=' + seriesId);
+                const data = await window.ApiClient.getJSON(url);
+                selSeason.innerHTML = '<option value="">-- All Seasons --</option>';
+                (data || []).forEach(s => {
+                    const opt = document.createElement('option');
+                    opt.value = s.Id;
+                    opt.textContent = s.Name;
+                    selSeason.appendChild(opt);
+                });
+                if (selectedSeason) selSeason.value = selectedSeason;
+            } catch (err) {
+                console.error(err);
+                selSeason.innerHTML = '<option value="">-- Error --</option>';
+            }
+        }
+
+        async function loadEpisodes(seriesId, seasonId, selectedEpisode) {
+            selEpisode.innerHTML = '<option value="">-- Loading episodes... --</option>';
+            try {
+                let url = window.ApiClient.getUrl('jellyzer/episodes?seriesId=' + seriesId);
+                if (seasonId) url += '&seasonId=' + seasonId;
+                
+                const data = await window.ApiClient.getJSON(url);
+                selEpisode.innerHTML = '<option value="">-- All Episodes --</option>';
+                (data || []).forEach(e => {
+                    const opt = document.createElement('option');
+                    opt.value = e.Id;
+                    opt.textContent = e.Name;
+                    selEpisode.appendChild(opt);
+                });
+                if (selectedEpisode) selEpisode.value = selectedEpisode;
+            } catch (err) {
+                console.error(err);
+                selEpisode.innerHTML = '<option value="">-- Error --</option>';
+            }
+        }
+
+        async function onSeasonChanged() {
+            const opt = selItem.options[selItem.selectedIndex];
+            
+            const epWrapper = document.querySelector('#episodeWrapper');
+            const epTitleOption = document.querySelector('#chkTranslateEpisodeTitle').closest('.checkboxContainer');
+            const seasonTitleOption = document.querySelector('#chkTranslateSeasonTitle').closest('.checkboxContainer');
+            
+            if (selSeason.value) {
+                if (epWrapper) epWrapper.classList.remove('hidden');
+                if (epTitleOption) epTitleOption.classList.remove('hidden');
+                if (seasonTitleOption) seasonTitleOption.classList.remove('hidden');
+                
+                if (opt && opt.value) {
+                    await loadEpisodes(opt.value, selSeason.value);
+                }
+            } else {
+                if (epWrapper) epWrapper.classList.add('hidden');
+                if (epTitleOption) epTitleOption.classList.add('hidden');
+                if (seasonTitleOption) seasonTitleOption.classList.add('hidden');
+                
+                selEpisode.innerHTML = '<option value="">-- All Episodes --</option>';
+                selEpisode.value = '';
+            }
+        }
+
+        async function loadConfig() {
+          Dashboard.showLoadingMsg();
+          try {
+            const cfg = await window.ApiClient.getPluginConfiguration(PLUGIN_ID);
+            
+            txtDomain.value = cfg.OpenApiDomain || "http://localhost:11434/v1";
+            if (cfg.OpenApiDomain && cfg.OpenApiModel) {
+              await fetchModels(cfg.OpenApiDomain, cfg.OpenApiModel);
+            }
+
+            txtInputLanguage.value = cfg.InputLanguage || '';
+            txtOutputLanguage.value = cfg.OutputLanguage || '';
+            
+            if (cfg.SystemPrompt) {
+                txtSystemPrompt.value = cfg.SystemPrompt;
+            }
+
+            if (cfg.InputLanguage) {
+                didAutoPopulateLang = true;
+            }
+
+            chkTitle.checked = cfg.TranslateTitle !== false;
+            chkDesc.checked = cfg.TranslateDescription !== false;
+            chkSeasonTitle.checked = cfg.TranslateSeasonTitle || false;
+            chkEpisodeTitle.checked = cfg.TranslateEpisodeTitle || false;
+            chkEnableDebug.checked = cfg.EnableDebugLogs || false;
+
+            await loadLibraryItems('');
+            await onLibraryItemChanged();
+            
+          } catch (err) {
+            console.error('Jellyzer: error loading config', err);
+          } finally {
+            Dashboard.hideLoadingMsg();
+          }
+        }
+
+        async function fetchModels(domainUrl, selectedModel) {
+            selModel.innerHTML = '<option value="">-- Fetching... --</option>';
+            try {
+                const proxyUrl = window.ApiClient.getUrl("jellyzer/openai-models");
+                const urlWithParams = proxyUrl + "?domain=" + encodeURIComponent(domainUrl.trim());
+                
+                const data = await window.ApiClient.getJSON(urlWithParams);
+
+                selModel.innerHTML = '<option value="">-- Select Model --</option>';
+                const models = data.data || [];
+                models.forEach(model => {
+                    const opt = document.createElement('option');
+                    opt.value = model.id;
+                    opt.textContent = model.id;
+                    selModel.appendChild(opt);
+                });
+
+                if (selectedModel) selModel.value = selectedModel;
+            } catch (err) {
+                console.error("Jellyzer: fetch models error", err);
+                selModel.innerHTML = '<option value="">-- Error fetching models --</option>';
+                Dashboard.alert("Could not fetch models from the specified URL.");
+            }
+        }
+
+        async function saveConfig(e) {
+          e.preventDefault();
+          Dashboard.showLoadingMsg();
+          try {
+            const cfg = await window.ApiClient.getPluginConfiguration(PLUGIN_ID);
+            
+            cfg.OpenApiDomain = txtDomain.value.trim();
+            cfg.OpenApiModel = selModel.value || '';
+
+            cfg.InputLanguage = txtInputLanguage.value.trim();
+            cfg.OutputLanguage = txtOutputLanguage.value.trim();
+            cfg.SystemPrompt = txtSystemPrompt.value.trim();
+
+            cfg.TranslateTitle = chkTitle.checked;
+            cfg.TranslateDescription = chkDesc.checked;
+            cfg.TranslateSeasonTitle = chkSeasonTitle.checked;
+            cfg.TranslateEpisodeTitle = chkEpisodeTitle.checked;
+            cfg.EnableDebugLogs = chkEnableDebug.checked;
+
+            await window.ApiClient.updatePluginConfiguration(PLUGIN_ID, cfg);
+            Dashboard.processPluginConfigurationUpdateResult();
+            
+            if (txtInputLanguage.value.trim() !== '') {
+                didAutoPopulateLang = true;
+            }
+          } catch (err) {
+            console.error('Jellyzer: error saving config', err);
+            Dashboard.hideLoadingMsg();
+          }
+        }
+
+        txtInputLanguage.addEventListener('input', () => {
+            didAutoPopulateLang = true;
+        });
+
+        // --- Translation Engine -----------------------------------
+        function logProgress(msg) {
+            progressDiv.classList.remove('hidden');
+            const div = document.createElement('div');
+            div.textContent = msg;
+            progressLog.appendChild(div);
+            progressLog.scrollTop = progressLog.scrollHeight;
+        }
+
+        async function processItem(itemInfo) {
+            logProgress(`[Pending] ${itemInfo.Name}...`);
+            
+            const req = {
+                ItemId: itemInfo.Id,
+                TranslateTitle: chkTitle.checked,
+                TranslateDescription: chkDesc.checked,
+                OpenApiDomain: txtDomain.value.trim(),
+                OpenApiModel: selModel.value,
+                InputLanguage: txtInputLanguage.value.trim(),
+                OutputLanguage: txtOutputLanguage.value.trim(),
+                SystemPrompt: txtSystemPrompt.value.trim(),
+                EnableDebugLogs: chkEnableDebug.checked
+            };
+
+            // Override for season/episode titles
+            if (itemInfo.Type === "Season") {
+                req.TranslateTitle = chkSeasonTitle.checked;
+                req.TranslateDescription = false; 
+            } else if (itemInfo.Type === "Episode") {
+                req.TranslateTitle = chkEpisodeTitle.checked;
+            }
+
+            try {
+                const url = window.ApiClient.getUrl('jellyzer/translate-item');
+                const resp = await window.ApiClient.ajax({
+                    type: "POST",
+                    url: url,
+                    data: JSON.stringify(req),
+                    contentType: "application/json"
+                });
+                const result = typeof resp === 'string' ? JSON.parse(resp) : resp;
+                logProgress(result.updated || result.Updated ? `[Done] Translated ${itemInfo.Name}` : `[Skipped] No changes needed for ${itemInfo.Name}`);
+                
+                const dLogs = result.debugLogs || result.DebugLogs || [];
+                if (dLogs && dLogs.length > 0) {
+                    dLogs.forEach(d => {
+                        const typeVal = d.type || d.Type || "Unknown";
+                        const inputVal = d.input || d.Input || "N/A";
+                        const outVal = d.output || d.Output || "N/A";
+                        logProgress(`----- DEBUG INFO (${typeVal}) -----`);
+                        logProgress(`INPUT JSON: ${inputVal}`);
+                        logProgress(`RAW OUTPUT: ${outVal}`);
+                        logProgress(`----------------------------------`);
+                    });
+                } else if (chkEnableDebug.checked) {
+                    logProgress(`[Debug] No logs returned. Translate options were Title=${chkTitle.checked}, Desc=${chkDesc.checked}`);
+                }
+            } catch (err) {
+                logProgress(`[Error] Failed translating ${itemInfo.Name}`);
+                console.error(err);
+            }
+        }
+
+        btnRun.addEventListener('click', async () => {
+            if (!selItem.value) {
+                Dashboard.alert("Please select a film or series first.");
+                return;
+            }
+            if (!txtDomain.value || !selModel.value) {
+                Dashboard.alert("Please configure OpenAPI domain and model.");
+                return;
+            }
+
+            progressLog.innerHTML = '';
+            btnRun.disabled = true;
+            btnRun.querySelector('span').textContent = 'Translating...';
+
+            try {
+                const opt = selItem.options[selItem.selectedIndex];
+                
+                // 1) Translate the main root item (Movie or Series)
+                if (chkTitle.checked || chkDesc.checked) {
+                    await processItem({ Id: opt.value, Name: opt.dataset.name, Type: opt.dataset.type });
+                }
+
+                // 2) If it's a Series, dig into seasons/episodes
+                if (opt.dataset.type === "Series") {
+                    
+                    // Filter seasons
+                    const targetSeasonIds = [];
+                    if (selSeason.value) {
+                        targetSeasonIds.push(selSeason.value);
+                    } else {
+                        // All Seasons
+                        Array.from(selSeason.options).forEach(o => {
+                            if (o.value) targetSeasonIds.push(o.value);
+                        });
+                    }
+
+                    for (const sId of targetSeasonIds) {
+                        const sName = selSeason.querySelector(`option[value="${sId}"]`)?.textContent || `Season ID ${sId}`;
+                        if (chkSeasonTitle.checked) {
+                            await processItem({ Id: sId, Name: sName, Type: "Season" });
+                        }
+
+                        // Get Episodes for this season
+                        let epUrl = window.ApiClient.getUrl('jellyzer/episodes?seriesId=' + opt.value + '&seasonId=' + sId);
+                        const eps = await window.ApiClient.getJSON(epUrl);
+
+                        for (const ep of (eps || [])) {
+                            // If a specific episode is selected, skip others
+                            if (selSeason.value && selEpisode.value && selEpisode.value !== ep.Id) {
+                                continue; 
+                            }
+                            
+                            if (chkEpisodeTitle.checked || chkDesc.checked) {
+                                await processItem({ Id: ep.Id, Name: ep.Name, Type: "Episode" });
+                            }
+                        }
+                    }
+                }
+                
+                logProgress("=== Translation Finished ===");
+            } catch (err) {
+                logProgress("=== Translation aborted with error ===");
+            } finally {
+                btnRun.disabled = false;
+                btnRun.querySelector('span').textContent = '▶ Run Translation';
+            }
+        });
+
+        btnFetch.addEventListener('click', () => {
+          if (!txtDomain.value) return;
+          fetchModels(txtDomain.value, selModel.value);
+        });
+
+        txtSearch.addEventListener('input', () => populateDropdown(selItem.value));
+        selItem.addEventListener('change', () => onLibraryItemChanged());
+        selSeason.addEventListener('change', onSeasonChanged);
+        form.addEventListener('submit', saveConfig);
+
+        page.addEventListener('pageshow', () => {
+          loadConfig(); 
+        });
+
+      })();
+    </script>
+  </div>
+</body>
+</html>

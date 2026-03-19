@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Jellyzer</AssemblyName>
+    <Version>0.1.0.0</Version>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Jellyfin.Model" Version="10.11.6" />
+    <PackageReference Include="Jellyfin.Controller" Version="10.11.6" />
+    <PackageReference Include="Jellyfin.Common" Version="10.11.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Configuration\configPage.html" />
+  </ItemGroup>
+
+  <!-- After build: strip Jellyfin SDK dlls that are already provided by the server -->
+  <Target Name="CleanupJellyfinDlls" AfterTargets="Build">
+    <ItemGroup>
+      <AllDlls Include="$(OutDir)*.dll" />
+      <FilesToKeep Include="$(OutDir)Jellyzer.dll" />
+      <FilesToDelete Include="@(AllDlls)" Exclude="@(FilesToKeep)" />
+    </ItemGroup>
+    <Delete Files="@(FilesToDelete)" />
+  </Target>
+</Project>

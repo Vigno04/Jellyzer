@@ -1,0 +1,9 @@
+  Individuazione dei progetti da ripristinare...
+  Tutti i progetti sono aggiornati per il ripristino.
+  Jellyzer -> C:\Dev\Personal\Jellyzer\Jellyzer\bin\Debug\net9.0\Jellyzer.dll
+
+Compilazione completata.
+    Avvisi: 0
+    Errori: 0
+
+Tempo trascorso 00:00:01.42

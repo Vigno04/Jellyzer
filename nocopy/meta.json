@@ -1,0 +1,16 @@
+{
+  "category": "General",
+  "changelog": "- Initial release",
+  "description": "Jellyzer — manage and configure your Jellyfin library.",
+  "guid": "3f8a2b1c-4d5e-6f70-8192-a3b4c5d6e7f8",
+  "name": "Jellyzer",
+  "overview": "Jellyzer plugin for Jellyfin.",
+  "owner": "Vigno04",
+  "targetAbi": "10.11.6.0",
+  "timestamp": "2026-03-18T18:00:00.0000000Z",
+  "version": "0.1.0.0",
+  "status": "Active",
+  "autoUpdate": false,
+  "imagePath": "logo.png",
+  "assemblies": ["Jellyzer.dll"]
+}
