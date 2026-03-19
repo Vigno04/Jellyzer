@@ -277,6 +277,7 @@ public sealed class JellyzerApiController : ControllerBase
                 OpenApiModel = request.OpenApiModel,
                 InputLanguage = request.InputLanguage,
                 OutputLanguage = request.OutputLanguage,
+                LlmTimeoutSeconds = request.LlmTimeoutSeconds,
                 SystemPrompt = request.SystemPrompt,
                 EnableDebugLogs = request.EnableDebugLogs
             };
@@ -580,7 +581,8 @@ public sealed class JellyzerApiController : ControllerBase
         };
 
         var client = _httpClientFactory.CreateClient();
-        client.Timeout = TimeSpan.FromSeconds(60);
+        var timeoutSeconds = Math.Clamp(request.LlmTimeoutSeconds <= 0 ? 120 : request.LlmTimeoutSeconds, 10, 3600);
+        client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
         
         var json = JsonSerializer.Serialize(payload);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -635,6 +637,7 @@ public sealed class TranslateItemRequest
     public string OpenApiModel { get; set; } = string.Empty;
     public string InputLanguage { get; set; } = string.Empty;
     public string OutputLanguage { get; set; } = string.Empty;
+    public int LlmTimeoutSeconds { get; set; } = 120;
     public string SystemPrompt { get; set; } = string.Empty;
     public bool EnableDebugLogs { get; set; }
 }
@@ -652,6 +655,7 @@ public sealed class StartTranslationRequest
     public string OpenApiModel { get; set; } = string.Empty;
     public string InputLanguage { get; set; } = string.Empty;
     public string OutputLanguage { get; set; } = string.Empty;
+    public int LlmTimeoutSeconds { get; set; } = 120;
     public string SystemPrompt { get; set; } = string.Empty;
     public bool EnableDebugLogs { get; set; }
 }

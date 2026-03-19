@@ -207,6 +207,12 @@
                       Fetch Models
                     </button>
                   </div>
+
+                  <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="txtLlmTimeout">LLM Request Timeout (seconds):</label>
+                    <input type="number" id="txtLlmTimeout" is="emby-input" class="emby-input" min="10" max="3600" step="5" placeholder="120" />
+                    <div class="fieldDescription">Increase this for heavier models to avoid timeout failures. Allowed range: 10-3600 seconds.</div>
+                  </div>
                 </div>
               </details>
 
@@ -275,6 +281,7 @@
 
         const txtDomain     = document.querySelector('#txtOpenApiDomain');
         const selModel      = document.querySelector('#selOpenApiModel');
+        const txtLlmTimeout = document.querySelector('#txtLlmTimeout');
         const btnFetch        = document.querySelector('#btnFetchModels');
         const btnRun          = document.querySelector('#btnRunTranslation');
         const progressDiv     = document.querySelector('#translationProgress');
@@ -444,6 +451,7 @@
 
             txtInputLanguage.value = cfg.InputLanguage || '';
             txtOutputLanguage.value = cfg.OutputLanguage || '';
+            txtLlmTimeout.value = String(cfg.LlmTimeoutSeconds || 120);
             
             if (cfg.SystemPrompt) {
                 txtSystemPrompt.value = cfg.SystemPrompt;
@@ -505,6 +513,7 @@
 
             cfg.InputLanguage = txtInputLanguage.value.trim();
             cfg.OutputLanguage = txtOutputLanguage.value.trim();
+            cfg.LlmTimeoutSeconds = Math.max(10, Math.min(3600, parseInt(txtLlmTimeout.value || '120', 10) || 120));
             cfg.SystemPrompt = txtSystemPrompt.value.trim();
 
             cfg.TranslateTitle = chkTitle.checked;
@@ -695,6 +704,7 @@
                   OpenApiModel: selModel.value,
                   InputLanguage: txtInputLanguage.value.trim(),
                   OutputLanguage: txtOutputLanguage.value.trim(),
+                  LlmTimeoutSeconds: Math.max(10, Math.min(3600, parseInt(txtLlmTimeout.value || '120', 10) || 120)),
                   SystemPrompt: txtSystemPrompt.value.trim(),
                   EnableDebugLogs: chkEnableDebug.checked
                 };

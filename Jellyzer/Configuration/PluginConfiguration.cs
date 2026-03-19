@@ -27,5 +27,10 @@ public class PluginConfiguration : BasePluginConfiguration
     public string InputLanguage { get; set; } = string.Empty;
     public string OutputLanguage { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Gets or sets the max wait time for each LLM request in seconds.
+    /// </summary>
+    public int LlmTimeoutSeconds { get; set; } = 120;
+
     public string SystemPrompt { get; set; } = "You are a professional translator. Translate the text from {input-language} to {output-language}. Output ONLY the exact translation with no quotes, explanations, or additional text.";
 }

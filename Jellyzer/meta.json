@@ -1,6 +1,6 @@
 {
   "category": "General",
-  "changelog": "- Fixed prompt placeholder substitution to use {input-language} and {output-language} format",
+  "changelog": "- Added configurable LLM request timeout for heavier models",
   "description": "Jellyzer — Jellyfin plugin that helps localize written metadata in your preferred language.",
   "guid": "3f8a2b1c-4d5e-6f70-8192-a3b4c5d6e7f8",
   "name": "Jellyzer",
@@ -8,7 +8,7 @@
   "owner": "Vigno04",
   "targetAbi": "10.11.6.0",
   "timestamp": "2026-03-19T18:59:58Z",
-  "version": "0.0.2.0",
+  "version": "0.0.3.0",
   "status": "Active",
   "autoUpdate": false,
   "imagePath": "logo.png",
