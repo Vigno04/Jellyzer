@@ -27,7 +27,7 @@ public class JellyzerPlugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public override Guid Id => Guid.Parse("3F8A2B1C-4D5E-6F70-8192-A3B4C5D6E7F8");
 
     /// <inheritdoc />
-    public override string Description => "Jellyzer — manage and configure your Jellyfin library.";
+    public override string Description => "Jellyzer — Jellyfin plugin that helps localize written metadata in your preferred language.";
 
     /// <summary>
     /// Gets the current plugin instance.

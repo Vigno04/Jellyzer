@@ -3,7 +3,7 @@
     "name": "Jellyzer",
     "guid": "3F8A2B1C-4D5E-6F70-8192-A3B4C5D6E7F8",
     "overview": "Jellyzer plugin for Jellyfin.",
-    "description": "Jellyzer — manage and configure your Jellyfin library.",
+    "description": "Jellyzer — Jellyfin plugin that helps localize written metadata in your preferred language.",
     "owner": "Vigno04",
     "category": "General",
     "imageUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/develop/Jellyzer/logo.png",

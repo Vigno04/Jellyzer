@@ -11,6 +11,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 
@@ -24,6 +25,9 @@ namespace Jellyzer.Controllers;
 [Authorize(Policy = "RequiresElevation")]
 public sealed class JellyzerApiController : ControllerBase
 {
+    private static readonly object TranslationStateLock = new();
+    private static TranslationJobState _translationState = TranslationJobState.CreateIdle();
+
     private readonly ILibraryManager _libraryManager;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<JellyzerApiController> _log;
@@ -154,6 +158,76 @@ public sealed class JellyzerApiController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>
+    /// Starts a full translation run in the background.
+    /// </summary>
+    [HttpPost("translation/start")]
+    public ActionResult StartTranslation([FromBody] StartTranslationRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.OpenApiDomain) || string.IsNullOrWhiteSpace(request.OpenApiModel))
+        {
+            return BadRequest("OpenAPI Domain and Model are required.");
+        }
+
+        if (request.ItemId == Guid.Empty)
+        {
+            return BadRequest("A target item is required.");
+        }
+
+        lock (TranslationStateLock)
+        {
+            if (_translationState.IsRunning)
+            {
+                return Conflict(new { message = "A translation job is already in progress." });
+            }
+
+            _translationState = TranslationJobState.CreateRunning();
+        }
+
+        _ = Task.Run(() => RunTranslationJobAsync(request), CancellationToken.None);
+        return Accepted();
+    }
+
+    /// <summary>
+    /// Returns current background translation status.
+    /// </summary>
+    [HttpGet("translation/status")]
+    public ActionResult<TranslationStatusResponse> GetTranslationStatus()
+    {
+        return Ok(GetTranslationStatusSnapshot());
+    }
+
+    /// <summary>
+    /// Requests a graceful stop after the current item finishes processing.
+    /// </summary>
+    [HttpPost("translation/stop")]
+    public ActionResult StopTranslation()
+    {
+        lock (TranslationStateLock)
+        {
+            if (!_translationState.IsRunning)
+            {
+                return Conflict(new { message = "No translation job is currently running." });
+            }
+
+            if (!_translationState.StopRequested)
+            {
+                _translationState.StopRequested = true;
+                _translationState.AppendLog("Stop requested. Waiting for current item to finish...");
+            }
+        }
+
+        return Accepted();
+    }
+
+    internal static TranslationStatusResponse GetTranslationStatusSnapshot()
+    {
+        lock (TranslationStateLock)
+        {
+            return _translationState.ToResponse();
+        }
+    }
+
     [HttpPost("translate-item")]
     public async Task<ActionResult> TranslateItem([FromBody] TranslateItemRequest request) 
     {
@@ -163,16 +237,285 @@ public sealed class JellyzerApiController : ControllerBase
         var item = _libraryManager.GetItemById(request.ItemId);
         if (item == null) return NotFound("Item not found.");
 
-        bool changed = false;
-        var debugLogs = new List<object>();
+        var result = await TranslateItemInternal(item, request.TranslateTitle, request.TranslateDescription, request).ConfigureAwait(false);
+        return Ok(new { success = true, updated = result.Updated, debugLogs = result.DebugLogs });
+    }
 
-        if (request.TranslateTitle)
+    private async Task RunTranslationJobAsync(StartTranslationRequest request)
+    {
+        try
+        {
+            var targets = BuildTargets(request);
+            UpdateTranslationState(state =>
+            {
+                state.TotalItems = targets.Count;
+                state.ProcessedItems = 0;
+                state.ProgressPercent = targets.Count == 0 ? 100 : 0;
+                state.CurrentItem = string.Empty;
+                state.AppendLog("=== Translation started ===");
+                if (targets.Count == 0)
+                {
+                    state.AppendLog("No eligible items were found based on the selected options.");
+                }
+            });
+
+            if (targets.Count == 0)
+            {
+                UpdateTranslationState(state =>
+                {
+                    state.AppendLog("=== Translation Finished ===");
+                    state.IsRunning = false;
+                    state.FinishedUtc = DateTime.UtcNow;
+                });
+
+                return;
+            }
+
+            var translatedRequest = new TranslateItemRequest
+            {
+                OpenApiDomain = request.OpenApiDomain,
+                OpenApiModel = request.OpenApiModel,
+                InputLanguage = request.InputLanguage,
+                OutputLanguage = request.OutputLanguage,
+                SystemPrompt = request.SystemPrompt,
+                EnableDebugLogs = request.EnableDebugLogs
+            };
+
+            foreach (var target in targets)
+            {
+                var shouldStop = false;
+                UpdateTranslationState(state => shouldStop = state.StopRequested);
+                if (shouldStop)
+                {
+                    UpdateTranslationState(state => state.AppendLog("=== Translation stopped by user ==="));
+                    break;
+                }
+
+                UpdateTranslationState(state =>
+                {
+                    state.CurrentItem = target.Name;
+                    state.AppendLog($"[Pending] {target.Name}...");
+                });
+
+                var item = _libraryManager.GetItemById(target.ItemId);
+                if (item == null)
+                {
+                    UpdateTranslationAfterItem($"[Skipped] Item no longer exists: {target.Name}");
+                    continue;
+                }
+
+                var result = await TranslateItemInternal(item, target.TranslateTitle, target.TranslateDescription, translatedRequest).ConfigureAwait(false);
+                if (result.Updated)
+                {
+                    UpdateTranslationState(state => state.AppendLog($"[Done] Translated {target.Name}"));
+                }
+                else
+                {
+                    UpdateTranslationState(state => state.AppendLog($"[Skipped] No changes needed for {target.Name}"));
+                }
+
+                foreach (var logEntry in result.DebugLogs)
+                {
+                    UpdateTranslationState(state =>
+                    {
+                        state.AppendLog($"----- DEBUG INFO ({logEntry.Type}) -----");
+                        state.AppendLog($"INPUT JSON: {logEntry.Input}");
+                        state.AppendLog($"RAW OUTPUT: {logEntry.Output}");
+                        state.AppendLog("----------------------------------");
+                    });
+                }
+
+                UpdateTranslationAfterItem(null);
+            }
+
+            UpdateTranslationState(state =>
+            {
+                if (!state.StopRequested)
+                {
+                    state.AppendLog("=== Translation Finished ===");
+                }
+
+                state.CurrentItem = string.Empty;
+                if (!state.StopRequested)
+                {
+                    state.ProgressPercent = 100;
+                }
+
+                state.IsRunning = false;
+                state.StopRequested = false;
+                state.FinishedUtc = DateTime.UtcNow;
+            });
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Jellyzer: background translation job failed.");
+            UpdateTranslationState(state =>
+            {
+                state.AppendLog("=== Translation aborted with error ===");
+                state.CurrentItem = string.Empty;
+                state.IsRunning = false;
+                state.StopRequested = false;
+                state.FinishedUtc = DateTime.UtcNow;
+            });
+        }
+    }
+
+    private void UpdateTranslationAfterItem(string? explicitLog)
+    {
+        UpdateTranslationState(state =>
+        {
+            if (!string.IsNullOrWhiteSpace(explicitLog))
+            {
+                state.AppendLog(explicitLog);
+            }
+
+            state.ProcessedItems++;
+            state.ProgressPercent = state.TotalItems == 0
+                ? 100
+                : Math.Min(100, (double)state.ProcessedItems / state.TotalItems * 100);
+        });
+    }
+
+    private void UpdateTranslationState(Action<TranslationJobState> update)
+    {
+        lock (TranslationStateLock)
+        {
+            update(_translationState);
+        }
+    }
+
+    private List<TranslationWorkItem> BuildTargets(StartTranslationRequest request)
+    {
+        var list = new List<TranslationWorkItem>();
+        var seen = new HashSet<Guid>();
+
+        var rootItem = _libraryManager.GetItemById(request.ItemId);
+        if (rootItem == null)
+        {
+            return list;
+        }
+
+        if (request.TranslateTitle || request.TranslateDescription)
+        {
+            AddWorkItem(list, seen, new TranslationWorkItem(rootItem.Id, rootItem.Name, request.TranslateTitle, request.TranslateDescription));
+        }
+
+        if (!string.Equals(rootItem.GetType().Name, "Series", StringComparison.Ordinal))
+        {
+            return list;
+        }
+
+        var seasonIds = new List<Guid>();
+        if (request.SeasonId.HasValue && request.SeasonId.Value != Guid.Empty)
+        {
+            seasonIds.Add(request.SeasonId.Value);
+        }
+        else
+        {
+            seasonIds.AddRange(GetSeasonIds(rootItem.Id));
+        }
+
+        foreach (var seasonId in seasonIds)
+        {
+            var season = _libraryManager.GetItemById(seasonId);
+            if (season == null)
+            {
+                continue;
+            }
+
+            if (request.TranslateSeasonTitle)
+            {
+                AddWorkItem(list, seen, new TranslationWorkItem(season.Id, season.Name, true, false));
+            }
+
+            if (!request.TranslateEpisodeTitle && !request.TranslateDescription)
+            {
+                continue;
+            }
+
+            var episodeIds = GetEpisodeIds(seasonId);
+            foreach (var episodeId in episodeIds)
+            {
+                if (request.EpisodeId.HasValue && request.EpisodeId.Value != Guid.Empty && episodeId != request.EpisodeId.Value)
+                {
+                    continue;
+                }
+
+                var episode = _libraryManager.GetItemById(episodeId);
+                if (episode == null)
+                {
+                    continue;
+                }
+
+                AddWorkItem(
+                    list,
+                    seen,
+                    new TranslationWorkItem(
+                        episode.Id,
+                        episode.Name,
+                        request.TranslateEpisodeTitle,
+                        request.TranslateDescription));
+            }
+        }
+
+        return list;
+    }
+
+    private void AddWorkItem(List<TranslationWorkItem> list, HashSet<Guid> seen, TranslationWorkItem workItem)
+    {
+        if (workItem.ItemId == Guid.Empty || (!workItem.TranslateTitle && !workItem.TranslateDescription))
+        {
+            return;
+        }
+
+        if (seen.Add(workItem.ItemId))
+        {
+            list.Add(workItem);
+        }
+    }
+
+    private IEnumerable<Guid> GetSeasonIds(Guid seriesId)
+    {
+        var items = _libraryManager.GetItemList(new InternalItemsQuery
+        {
+            ParentId = seriesId,
+            IncludeItemTypes = [BaseItemKind.Season],
+        });
+
+        return items.OrderBy(item => item.IndexNumber ?? 999).Select(item => item.Id);
+    }
+
+    private IEnumerable<Guid> GetEpisodeIds(Guid seasonId)
+    {
+        var query = new InternalItemsQuery
+        {
+            IncludeItemTypes = [BaseItemKind.Episode],
+            Recursive = true,
+            ParentId = seasonId,
+        };
+
+        var items = _libraryManager.GetItemList(query);
+        return items
+            .OrderBy(item => item.ParentIndexNumber ?? 0)
+            .ThenBy(item => item.IndexNumber ?? 999)
+            .Select(item => item.Id);
+    }
+
+    private async Task<TranslateItemExecutionResult> TranslateItemInternal(BaseItem item, bool translateTitle, bool translateDescription, TranslateItemRequest request)
+    {
+        bool changed = false;
+        var debugLogs = new List<DebugLogEntry>();
+
+        if (translateTitle)
         {
             if (!string.IsNullOrWhiteSpace(item.Name))
             {
-                var res = await CallLlmTranslation(item.Name, request);
-                if (request.EnableDebugLogs) debugLogs.Add(new { type = "Title", input = res.prompt, output = res.rawOutput });
-                
+                var res = await CallLlmTranslation(item.Name, request).ConfigureAwait(false);
+                if (request.EnableDebugLogs)
+                {
+                    debugLogs.Add(new DebugLogEntry("Title", res.prompt, res.rawOutput));
+                }
+
                 if (!string.IsNullOrWhiteSpace(res.text) && res.text != item.Name)
                 {
                     item.Name = res.text;
@@ -181,16 +524,19 @@ public sealed class JellyzerApiController : ControllerBase
             }
             else if (request.EnableDebugLogs)
             {
-                debugLogs.Add(new { type = "Title", input = "N/A (Title Empty)", output = "N/A" });
+                debugLogs.Add(new DebugLogEntry("Title", "N/A (Title Empty)", "N/A"));
             }
         }
 
-        if (request.TranslateDescription)
+        if (translateDescription)
         {
             if (!string.IsNullOrWhiteSpace(item.Overview))
             {
-                var res = await CallLlmTranslation(item.Overview, request);
-                if (request.EnableDebugLogs) debugLogs.Add(new { type = "Description", input = res.prompt, output = res.rawOutput });
+                var res = await CallLlmTranslation(item.Overview, request).ConfigureAwait(false);
+                if (request.EnableDebugLogs)
+                {
+                    debugLogs.Add(new DebugLogEntry("Description", res.prompt, res.rawOutput));
+                }
 
                 if (!string.IsNullOrWhiteSpace(res.text) && res.text != item.Overview)
                 {
@@ -200,16 +546,16 @@ public sealed class JellyzerApiController : ControllerBase
             }
             else if (request.EnableDebugLogs)
             {
-                debugLogs.Add(new { type = "Description", input = "N/A (Description Empty)", output = "N/A" });
+                debugLogs.Add(new DebugLogEntry("Description", "N/A (Description Empty)", "N/A"));
             }
         }
 
         if (changed)
         {
-            await _libraryManager.UpdateItemAsync(item, item.GetParent(), ItemUpdateType.MetadataEdit, System.Threading.CancellationToken.None);
+            await _libraryManager.UpdateItemAsync(item, item.GetParent(), ItemUpdateType.MetadataEdit, CancellationToken.None).ConfigureAwait(false);
         }
 
-        return Ok(new { success = true, updated = changed, debugLogs });
+        return new TranslateItemExecutionResult(changed, debugLogs);
     }
 
     private async Task<(string text, string prompt, string rawOutput)> CallLlmTranslation(string text, TranslateItemRequest request)
@@ -290,6 +636,103 @@ public sealed class TranslateItemRequest
     public string SystemPrompt { get; set; } = string.Empty;
     public bool EnableDebugLogs { get; set; }
 }
+
+public sealed class StartTranslationRequest
+{
+    public Guid ItemId { get; set; }
+    public Guid? SeasonId { get; set; }
+    public Guid? EpisodeId { get; set; }
+    public bool TranslateTitle { get; set; }
+    public bool TranslateDescription { get; set; }
+    public bool TranslateSeasonTitle { get; set; }
+    public bool TranslateEpisodeTitle { get; set; }
+    public string OpenApiDomain { get; set; } = string.Empty;
+    public string OpenApiModel { get; set; } = string.Empty;
+    public string InputLanguage { get; set; } = string.Empty;
+    public string OutputLanguage { get; set; } = string.Empty;
+    public string SystemPrompt { get; set; } = string.Empty;
+    public bool EnableDebugLogs { get; set; }
+}
+
+public sealed class TranslationStatusResponse
+{
+    public bool IsRunning { get; set; }
+    public bool StopRequested { get; set; }
+    public double ProgressPercent { get; set; }
+    public int ProcessedItems { get; set; }
+    public int TotalItems { get; set; }
+    public string CurrentItem { get; set; } = string.Empty;
+    public DateTime? StartedUtc { get; set; }
+    public DateTime? FinishedUtc { get; set; }
+    public List<string> Logs { get; set; } = [];
+}
+
+public sealed class TranslationJobState
+{
+    public bool IsRunning { get; set; }
+    public bool StopRequested { get; set; }
+    public double ProgressPercent { get; set; }
+    public int ProcessedItems { get; set; }
+    public int TotalItems { get; set; }
+    public string CurrentItem { get; set; } = string.Empty;
+    public DateTime? StartedUtc { get; set; }
+    public DateTime? FinishedUtc { get; set; }
+    public List<string> Logs { get; set; } = [];
+
+    public static TranslationJobState CreateIdle() => new()
+    {
+        IsRunning = false,
+        StopRequested = false,
+        ProgressPercent = 0,
+        ProcessedItems = 0,
+        TotalItems = 0,
+        CurrentItem = string.Empty,
+        StartedUtc = null,
+        FinishedUtc = null,
+        Logs = [],
+    };
+
+    public static TranslationJobState CreateRunning() => new()
+    {
+        IsRunning = true,
+        StopRequested = false,
+        ProgressPercent = 0,
+        ProcessedItems = 0,
+        TotalItems = 0,
+        CurrentItem = string.Empty,
+        StartedUtc = DateTime.UtcNow,
+        FinishedUtc = null,
+        Logs = [],
+    };
+
+    public void AppendLog(string message)
+    {
+        Logs.Add($"{DateTime.UtcNow:HH:mm:ss} {message}");
+        if (Logs.Count > 500)
+        {
+            Logs.RemoveAt(0);
+        }
+    }
+
+    public TranslationStatusResponse ToResponse() => new()
+    {
+        IsRunning = IsRunning,
+        StopRequested = StopRequested,
+        ProgressPercent = ProgressPercent,
+        ProcessedItems = ProcessedItems,
+        TotalItems = TotalItems,
+        CurrentItem = CurrentItem,
+        StartedUtc = StartedUtc,
+        FinishedUtc = FinishedUtc,
+        Logs = [.. Logs],
+    };
+}
+
+public sealed record TranslationWorkItem(Guid ItemId, string Name, bool TranslateTitle, bool TranslateDescription);
+
+public sealed record DebugLogEntry(string Type, string Input, string Output);
+
+public sealed record TranslateItemExecutionResult(bool Updated, List<DebugLogEntry> DebugLogs);
 
 /// <summary>
 /// DTO representing a library item for the configuration dropdown.

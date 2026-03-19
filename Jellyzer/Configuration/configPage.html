@@ -60,6 +60,29 @@
       margin: 1em 0;
       padding-top: 1em;
     }
+
+    .progress-summary {
+      font-size: 0.92em;
+      opacity: 0.9;
+      margin-top: 0.75em;
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      margin-top: 0.5em;
+      background: rgba(255, 255, 255, 0.15);
+      overflow: hidden;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+    }
+
+    .progress-fill {
+      width: 0;
+      height: 100%;
+      background: linear-gradient(90deg, #2dd4bf 0%, #22c55e 100%);
+      transition: width 220ms ease;
+    }
   </style>
 </head>
 
@@ -226,6 +249,11 @@
           <div id="translationProgress" class="hidden" style="margin-top: 1em; padding: 1em; background: rgba(0,0,0,0.3); border-radius: 4px; border-left: 4px solid #4caf50;">
             <div style="font-weight: bold; margin-bottom: 0.5em;">Translation Progress</div>
             <div id="progressLog" style="font-family: monospace; font-size: 0.9em; opacity: 0.8; max-height: 150px; overflow-y: auto;"></div>
+            <div id="progressSummary" class="progress-summary">Idle</div>
+            <div id="progressPercent" class="progress-summary">0.0%</div>
+            <div class="progress-track" aria-label="Translation progress">
+              <div id="progressBarFill" class="progress-fill"></div>
+            </div>
           </div>
 
         </form>
@@ -251,6 +279,9 @@
         const btnRun          = document.querySelector('#btnRunTranslation');
         const progressDiv     = document.querySelector('#translationProgress');
         const progressLog     = document.querySelector('#progressLog');
+        const progressSummary = document.querySelector('#progressSummary');
+        const progressPercentText = document.querySelector('#progressPercent');
+        const progressBarFill = document.querySelector('#progressBarFill');
 
         const chkTitle            = document.querySelector('#chkTranslateTitle');
         const chkDesc             = document.querySelector('#chkTranslateDescription');
@@ -265,6 +296,9 @@
 
         let allItems = [];
         let didAutoPopulateLang = false;
+        let statusPollTimer = null;
+        let isTranslationRunning = false;
+        let isStopRequested = false;
 
         function getFilteredItems() {
           const q = (txtSearch.value || '').toLowerCase();
@@ -496,69 +530,149 @@
         });
 
         // --- Translation Engine -----------------------------------
-        function logProgress(msg) {
-            progressDiv.classList.remove('hidden');
-            const div = document.createElement('div');
-            div.textContent = msg;
-            progressLog.appendChild(div);
-            progressLog.scrollTop = progressLog.scrollHeight;
+        function setProgress(percent) {
+          const safePercent = Math.max(0, Math.min(100, Number(percent) || 0));
+          progressBarFill.style.width = safePercent.toFixed(1) + '%';
         }
 
-        async function processItem(itemInfo) {
-            logProgress(`[Pending] ${itemInfo.Name}...`);
-            
-            const req = {
-                ItemId: itemInfo.Id,
-                TranslateTitle: chkTitle.checked,
-                TranslateDescription: chkDesc.checked,
-                OpenApiDomain: txtDomain.value.trim(),
-                OpenApiModel: selModel.value,
-                InputLanguage: txtInputLanguage.value.trim(),
-                OutputLanguage: txtOutputLanguage.value.trim(),
-                SystemPrompt: txtSystemPrompt.value.trim(),
-                EnableDebugLogs: chkEnableDebug.checked
-            };
+        async function fetchTranslationStatus() {
+          const url = window.ApiClient.getUrl('jellyzer/translation/status');
+          return window.ApiClient.getJSON(url);
+        }
 
-            // Override for season/episode titles
-            if (itemInfo.Type === "Season") {
-                req.TranslateTitle = chkSeasonTitle.checked;
-                req.TranslateDescription = false; 
-            } else if (itemInfo.Type === "Episode") {
-                req.TranslateTitle = chkEpisodeTitle.checked;
+        async function requestStopTranslation() {
+          const url = window.ApiClient.getUrl('jellyzer/translation/stop');
+          await window.ApiClient.ajax({
+            type: 'POST',
+            url: url,
+            dataType: 'json'
+          });
+        }
+
+        async function triggerControlPanelTask() {
+          try {
+            const tasksUrl = window.ApiClient.getUrl('ScheduledTasks');
+            const tasks = await window.ApiClient.getJSON(tasksUrl);
+            const allTasks = Array.isArray(tasks) ? tasks : [];
+
+            const task = allTasks.find(t => {
+              const key = t.key || t.Key || '';
+              const name = t.name || t.Name || '';
+              return key === 'JellyzerTranslationMonitor' || name === 'Jellyzer Translation';
+            });
+
+            if (!task) {
+              console.warn('Jellyzer: translation monitor task not found in ScheduledTasks list.');
+              return;
             }
 
+            const taskId = task.id || task.Id;
+            if (!taskId) {
+              return;
+            }
+
+            const runUrl = window.ApiClient.getUrl('ScheduledTasks/Running/' + taskId);
+            await window.ApiClient.ajax({
+              type: 'POST',
+              url: runUrl,
+              dataType: 'json'
+            });
+          } catch (err) {
+            console.warn('Jellyzer: failed to trigger control panel task', err);
+          }
+        }
+
+        function renderTranslationStatus(status) {
+          const isRunning = !!(status.isRunning ?? status.IsRunning);
+          const stopRequested = !!(status.stopRequested ?? status.StopRequested);
+          const processed = Number(status.processedItems ?? status.ProcessedItems ?? 0);
+          const total = Number(status.totalItems ?? status.TotalItems ?? 0);
+          const currentItem = status.currentItem ?? status.CurrentItem ?? '';
+          const logs = status.logs || status.Logs || [];
+          const percentValue = Number(status.progressPercent ?? status.ProgressPercent ?? (total > 0 ? (processed / total) * 100 : 0));
+          isTranslationRunning = isRunning;
+          isStopRequested = stopRequested;
+
+          if (isRunning || logs.length > 0) {
+            progressDiv.classList.remove('hidden');
+          }
+
+          progressLog.innerHTML = '';
+          logs.forEach(line => {
+            const div = document.createElement('div');
+            div.textContent = line;
+            progressLog.appendChild(div);
+          });
+          progressLog.scrollTop = progressLog.scrollHeight;
+
+          if (isRunning) {
+            const currentText = currentItem ? ' - ' + currentItem : '';
+            const stopText = stopRequested ? ' (stopping after current item)' : '';
+            progressSummary.textContent = 'Running: ' + processed + '/' + total + currentText + stopText;
+          } else if (total > 0) {
+            progressSummary.textContent = 'Last run: ' + processed + '/' + total;
+          } else {
+            progressSummary.textContent = 'Idle';
+          }
+
+          progressPercentText.textContent = Math.max(0, Math.min(100, percentValue)).toFixed(1) + '%';
+
+          setProgress(percentValue);
+          if (isRunning && stopRequested) {
+            btnRun.disabled = true;
+            btnRun.querySelector('span').textContent = 'Stopping...';
+          } else if (isRunning) {
+            btnRun.disabled = false;
+            btnRun.querySelector('span').textContent = '■ Stop Translation';
+          } else {
+            btnRun.disabled = false;
+            btnRun.querySelector('span').textContent = '▶ Run Translation';
+          }
+        }
+
+        async function refreshTranslationStatus() {
             try {
-                const url = window.ApiClient.getUrl('jellyzer/translate-item');
-                const resp = await window.ApiClient.ajax({
-                    type: "POST",
-                    url: url,
-                    data: JSON.stringify(req),
-                    contentType: "application/json"
-                });
-                const result = typeof resp === 'string' ? JSON.parse(resp) : resp;
-                logProgress(result.updated || result.Updated ? `[Done] Translated ${itemInfo.Name}` : `[Skipped] No changes needed for ${itemInfo.Name}`);
-                
-                const dLogs = result.debugLogs || result.DebugLogs || [];
-                if (dLogs && dLogs.length > 0) {
-                    dLogs.forEach(d => {
-                        const typeVal = d.type || d.Type || "Unknown";
-                        const inputVal = d.input || d.Input || "N/A";
-                        const outVal = d.output || d.Output || "N/A";
-                        logProgress(`----- DEBUG INFO (${typeVal}) -----`);
-                        logProgress(`INPUT JSON: ${inputVal}`);
-                        logProgress(`RAW OUTPUT: ${outVal}`);
-                        logProgress(`----------------------------------`);
-                    });
-                } else if (chkEnableDebug.checked) {
-                    logProgress(`[Debug] No logs returned. Translate options were Title=${chkTitle.checked}, Desc=${chkDesc.checked}`);
+            const status = await fetchTranslationStatus();
+            renderTranslationStatus(status);
+
+            const isRunning = !!(status.isRunning ?? status.IsRunning);
+            if (!isRunning && statusPollTimer) {
+              clearInterval(statusPollTimer);
+              statusPollTimer = null;
                 }
             } catch (err) {
-                logProgress(`[Error] Failed translating ${itemInfo.Name}`);
                 console.error(err);
             }
         }
 
+        function ensureStatusPolling() {
+          if (!statusPollTimer) {
+            statusPollTimer = setInterval(refreshTranslationStatus, 1500);
+          }
+        }
+
         btnRun.addEventListener('click', async () => {
+          if (isTranslationRunning) {
+            if (isStopRequested) {
+              return;
+            }
+
+            try {
+              await requestStopTranslation();
+              progressSummary.textContent = 'Stop requested. Waiting for current item to finish...';
+              btnRun.disabled = true;
+              btnRun.querySelector('span').textContent = 'Stopping...';
+              ensureStatusPolling();
+              await refreshTranslationStatus();
+            } catch (err) {
+              Dashboard.alert('Failed to request stop.');
+              ensureStatusPolling();
+              await refreshTranslationStatus();
+            }
+
+            return;
+          }
+
             if (!selItem.value) {
                 Dashboard.alert("Please select a film or series first.");
                 return;
@@ -568,61 +682,46 @@
                 return;
             }
 
-            progressLog.innerHTML = '';
-            btnRun.disabled = true;
-            btnRun.querySelector('span').textContent = 'Translating...';
-
             try {
-                const opt = selItem.options[selItem.selectedIndex];
-                
-                // 1) Translate the main root item (Movie or Series)
-                if (chkTitle.checked || chkDesc.checked) {
-                    await processItem({ Id: opt.value, Name: opt.dataset.name, Type: opt.dataset.type });
-                }
+                const req = {
+                  ItemId: selItem.value,
+                  SeasonId: selSeason.value || null,
+                  EpisodeId: selEpisode.value || null,
+                  TranslateTitle: chkTitle.checked,
+                  TranslateDescription: chkDesc.checked,
+                  TranslateSeasonTitle: chkSeasonTitle.checked,
+                  TranslateEpisodeTitle: chkEpisodeTitle.checked,
+                  OpenApiDomain: txtDomain.value.trim(),
+                  OpenApiModel: selModel.value,
+                  InputLanguage: txtInputLanguage.value.trim(),
+                  OutputLanguage: txtOutputLanguage.value.trim(),
+                  SystemPrompt: txtSystemPrompt.value.trim(),
+                  EnableDebugLogs: chkEnableDebug.checked
+                };
 
-                // 2) If it's a Series, dig into seasons/episodes
-                if (opt.dataset.type === "Series") {
-                    
-                    // Filter seasons
-                    const targetSeasonIds = [];
-                    if (selSeason.value) {
-                        targetSeasonIds.push(selSeason.value);
-                    } else {
-                        // All Seasons
-                        Array.from(selSeason.options).forEach(o => {
-                            if (o.value) targetSeasonIds.push(o.value);
-                        });
-                    }
+                const url = window.ApiClient.getUrl('jellyzer/translation/start');
+                await window.ApiClient.ajax({
+                  type: "POST",
+                  url: url,
+                  data: JSON.stringify(req),
+                  contentType: "application/json"
+                });
 
-                    for (const sId of targetSeasonIds) {
-                        const sName = selSeason.querySelector(`option[value="${sId}"]`)?.textContent || `Season ID ${sId}`;
-                        if (chkSeasonTitle.checked) {
-                            await processItem({ Id: sId, Name: sName, Type: "Season" });
-                        }
+                await triggerControlPanelTask();
 
-                        // Get Episodes for this season
-                        let epUrl = window.ApiClient.getUrl('jellyzer/episodes?seriesId=' + opt.value + '&seasonId=' + sId);
-                        const eps = await window.ApiClient.getJSON(epUrl);
-
-                        for (const ep of (eps || [])) {
-                            // If a specific episode is selected, skip others
-                            if (selSeason.value && selEpisode.value && selEpisode.value !== ep.Id) {
-                                continue; 
-                            }
-                            
-                            if (chkEpisodeTitle.checked || chkDesc.checked) {
-                                await processItem({ Id: ep.Id, Name: ep.Name, Type: "Episode" });
-                            }
-                        }
-                    }
-                }
-                
-                logProgress("=== Translation Finished ===");
+                progressDiv.classList.remove('hidden');
+                progressLog.innerHTML = '';
+                progressSummary.textContent = 'Starting...';
+                setProgress(0);
+                ensureStatusPolling();
+                await refreshTranslationStatus();
             } catch (err) {
-                logProgress("=== Translation aborted with error ===");
-            } finally {
-                btnRun.disabled = false;
-                btnRun.querySelector('span').textContent = '▶ Run Translation';
+                const message = (err && err.status === 409)
+                  ? 'A translation job is already running.'
+                  : 'Failed to start translation.';
+                Dashboard.alert(message);
+                ensureStatusPolling();
+                await refreshTranslationStatus();
             }
         });
 
@@ -637,7 +736,9 @@
         form.addEventListener('submit', saveConfig);
 
         page.addEventListener('pageshow', () => {
-          loadConfig(); 
+          loadConfig();
+          ensureStatusPolling();
+          refreshTranslationStatus();
         });
 
       })();
