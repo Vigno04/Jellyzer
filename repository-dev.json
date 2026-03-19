@@ -9,12 +9,12 @@
     "imageUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/develop/Jellyzer/logo.png",
     "versions": [
       {
-        "version": "0.1.0.7",
+        "version": "0.1.0.8",
         "targetAbi": "10.11.6.0",
         "sourceUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/develop/packages/jellyzer-develop-latest.zip",
-        "checksum": "5960a99a9db17996f86a7bceb6067187",
-        "timestamp": "2026-03-19T14:11:22Z",
-        "changelog": "Rolling develop build from cb7ba0e6a31512963ca349312323ede746caaeca"
+        "checksum": "4cb32cd1f546c61d3314e36755bd1a0a",
+        "timestamp": "2026-03-19T17:20:04Z",
+        "changelog": "Rolling develop build from 13479c373aa5176b095fb0170575048adb62bc04"
       }
     ]
   }
