@@ -50,6 +50,8 @@ jobs:
             exit 1
           fi
 
+          ZIP_NAME="jellyzer-${BASE_VERSION}.zip"
+
           mkdir -p artifacts/package
           cp Jellyzer/bin/Release/net9.0/Jellyzer.dll artifacts/package/
 
@@ -61,10 +63,11 @@ jobs:
             cp Jellyzer/logo.png artifacts/package/
           fi
 
-          (cd artifacts/package && zip -r ../jellyzer-main-latest.zip .)
-          (cd artifacts && md5sum jellyzer-main-latest.zip > jellyzer-main-latest.md5)
+          (cd artifacts/package && zip -r "../${ZIP_NAME}" .)
+          cp "artifacts/${ZIP_NAME}" "artifacts/jellyzer-main-latest.zip"
 
-          CHECKSUM="$(awk '{print $1}' artifacts/jellyzer-main-latest.md5)"
+          CHECKSUM="$(md5sum "artifacts/${ZIP_NAME}" | awk '{print $1}')"
+          (cd artifacts && md5sum jellyzer-main-latest.zip > jellyzer-main-latest.md5)
           TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
           NAME="$(jq -r '.name' Jellyzer/meta.json)"
@@ -76,10 +79,14 @@ jobs:
           TARGET_ABI="$(jq -r '.targetAbi' Jellyzer/meta.json)"
           CHANGELOG="$(awk '/^changelog:/ {getline; sub(/^  /, ""); print; exit}' build.yaml)"
 
-          SOURCE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/refs/heads/main/packages/jellyzer-main-latest.zip"
+          SOURCE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/refs/heads/main/packages/${ZIP_NAME}"
           IMAGE_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/refs/heads/main/Jellyzer/logo.png"
 
-          jq -n \
+          if [ ! -f repository.json ]; then
+            echo '[]' > repository.json
+          fi
+
+          jq \
             --arg name "${NAME}" \
             --arg guid "${GUID}" \
             --arg overview "${OVERVIEW}" \
@@ -93,23 +100,43 @@ jobs:
             --arg sourceUrl "${SOURCE_URL}" \
             --arg imageUrl "${IMAGE_URL}" \
             --arg changelog "${CHANGELOG}" \
-            '[{
-              name: $name,
-              guid: $guid,
-              overview: $overview,
-              description: $description,
-              owner: $owner,
-              category: $category,
-              imageUrl: $imageUrl,
-              versions: [{
-                version: $version,
-                targetAbi: $targetAbi,
-                sourceUrl: $sourceUrl,
-                checksum: $checksum,
-                timestamp: $timestamp,
-                changelog: $changelog
+            '
+            ({
+              version: $version,
+              targetAbi: $targetAbi,
+              sourceUrl: $sourceUrl,
+              checksum: $checksum,
+              timestamp: $timestamp,
+              changelog: $changelog
+            }) as $newVersion |
+            if (type == "array" and length > 0) then
+              [ .[0]
+                | .name = $name
+                | .guid = $guid
+                | .overview = $overview
+                | .description = $description
+                | .owner = $owner
+                | .category = $category
+                | .imageUrl = $imageUrl
+                | .versions = ([ $newVersion ] + ((.versions // []) | map(select((.version != $version) or (.targetAbi != $targetAbi)))))
+              ]
+            else
+              [{
+                name: $name,
+                guid: $guid,
+                overview: $overview,
+                description: $description,
+                owner: $owner,
+                category: $category,
+                imageUrl: $imageUrl,
+                versions: [ $newVersion ]
               }]
-            }]' > repository.json
+            end
+            ' repository.json > repository.json.tmp
+
+          mv repository.json.tmp repository.json
+
+          echo "ZIP_NAME=${ZIP_NAME}" >> $GITHUB_ENV
 
       - name: Commit published main artifacts
         run: |
@@ -117,10 +144,11 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           mkdir -p packages
+          cp "artifacts/${ZIP_NAME}" "packages/${ZIP_NAME}"
           cp artifacts/jellyzer-main-latest.zip packages/jellyzer-main-latest.zip
           cp artifacts/jellyzer-main-latest.md5 packages/jellyzer-main-latest.md5
 
-          git add repository.json packages/jellyzer-main-latest.zip packages/jellyzer-main-latest.md5
+          git add repository.json "packages/${ZIP_NAME}" packages/jellyzer-main-latest.zip packages/jellyzer-main-latest.md5
           if ! git diff --cached --quiet; then
             git commit -m "ci: update stable repository manifest [skip ci]"
             git push origin HEAD:main
