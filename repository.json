@@ -1,0 +1,21 @@
+[
+  {
+    "name": "Jellyzer",
+    "guid": "3F8A2B1C-4D5E-6F70-8192-A3B4C5D6E7F8",
+    "overview": "Jellyzer plugin for Jellyfin.",
+    "description": "Jellyzer — Jellyfin plugin that helps localize written metadata in your preferred language.",
+    "owner": "Vigno04",
+    "category": "General",
+    "imageUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/main/Jellyzer/logo.png",
+    "versions": [
+      {
+        "version": "0.1.0.9",
+        "targetAbi": "10.11.6.0",
+        "sourceUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/main/packages/jellyzer-main-latest.zip",
+        "checksum": "43e28980b3bf1345d036147b49a91605",
+        "timestamp": "2026-03-19T18:07:11Z",
+        "changelog": "Rolling develop build from be18290847296e4d3cf3975096350556f34fa6de"
+      }
+    ]
+  }
+]
