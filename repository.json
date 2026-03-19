@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/main/Jellyzer/logo.png",
     "versions": [
       {
+        "version": "0.0.2.0",
+        "targetAbi": "10.11.6.0",
+        "sourceUrl": "https://github.com/Vigno04/Jellyzer/releases/download/v0.0.2/jellyzer-0.0.2.zip",
+        "checksum": "0D3D84B722E220F03D37C842AE1D36AE",
+        "timestamp": "2026-03-19T19:00:00Z",
+        "changelog": "Fixed prompt placeholder substitution to use {input-language} and {output-language} format."
+      },
+      {
         "version": "0.0.1.0",
         "targetAbi": "10.11.6.0",
         "sourceUrl": "https://github.com/Vigno04/Jellyzer/releases/download/v0.0.1/jellyzer-0.0.1.zip",

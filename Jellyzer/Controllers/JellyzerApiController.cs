@@ -564,7 +564,9 @@ public sealed class JellyzerApiController : ControllerBase
         
         var sysPrompt = request.SystemPrompt ?? "";
         sysPrompt = sysPrompt.Replace("[INPUT_LANGUAGE]", request.InputLanguage ?? "auto-detect")
-                             .Replace("[OUTPUT_LANGUAGE]", request.OutputLanguage ?? "auto-detect");
+                             .Replace("[OUTPUT_LANGUAGE]", request.OutputLanguage ?? "auto-detect")
+                             .Replace("{input-language}", request.InputLanguage ?? "auto-detect")
+                             .Replace("{output-language}", request.OutputLanguage ?? "auto-detect");
 
         var payload = new
         {
