@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/main/Jellyzer/logo.png",
     "versions": [
       {
+        "version": "0.0.3.0",
+        "targetAbi": "10.11.6.0",
+        "sourceUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/main/packages/jellyzer-0.0.3.zip",
+        "checksum": "480d1885008eeaf608228c48548afbae",
+        "timestamp": "2026-03-19T21:19:34Z",
+        "changelog": "Added configurable LLM request timeout to handle heavier models without timing out."
+      },
+      {
         "version": "0.0.2.0",
         "targetAbi": "10.11.6.0",
         "sourceUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/main/packages/jellyzer-0.0.2.zip",
