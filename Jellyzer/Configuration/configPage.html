@@ -201,6 +201,18 @@
                     <div class="fieldDescription">If your provider requires authentication, this key is sent as a Bearer token.</div>
                   </div>
 
+                  <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="txtOpenApiModelsPath">Models Path:</label>
+                    <input type="text" id="txtOpenApiModelsPath" is="emby-input" class="emby-input" placeholder="/models" />
+                    <div class="fieldDescription">Endpoint path used to list models. Accepts relative paths (e.g. <code>models</code>) or absolute paths (e.g. <code>/v1/models</code>).</div>
+                  </div>
+
+                  <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="txtOpenApiCompletionPath">Completion Path:</label>
+                    <input type="text" id="txtOpenApiCompletionPath" is="emby-input" class="emby-input" placeholder="/chat/completions" />
+                    <div class="fieldDescription">Endpoint path used for translation completions (e.g. <code>/v1/chat/completition</code>).</div>
+                  </div>
+
                   <div class="inputContainer" style="display: flex; gap: 1em; align-items: flex-end;">
                     <div style="flex-grow: 1;">
                       <label class="selectLabel" for="selOpenApiModel">Available Model:</label>
@@ -287,6 +299,8 @@
 
         const txtDomain     = document.querySelector('#txtOpenApiDomain');
         const txtApiKey     = document.querySelector('#txtOpenApiKey');
+        const txtModelsPath = document.querySelector('#txtOpenApiModelsPath');
+        const txtCompletionPath = document.querySelector('#txtOpenApiCompletionPath');
         const selModel      = document.querySelector('#selOpenApiModel');
         const txtLlmTimeout = document.querySelector('#txtLlmTimeout');
         const btnFetch        = document.querySelector('#btnFetchModels');
@@ -453,8 +467,10 @@
             
             txtDomain.value = cfg.OpenApiDomain || "http://localhost:11434/v1";
             txtApiKey.value = cfg.OpenApiKey || '';
+            txtModelsPath.value = cfg.OpenApiModelsPath || '/models';
+            txtCompletionPath.value = cfg.OpenApiCompletionPath || '/chat/completions';
             if (cfg.OpenApiDomain && cfg.OpenApiModel) {
-              await fetchModels(cfg.OpenApiDomain, cfg.OpenApiModel, cfg.OpenApiKey || '');
+              await fetchModels(cfg.OpenApiDomain, cfg.OpenApiModel, cfg.OpenApiKey || '', cfg.OpenApiModelsPath || '/models');
             }
 
             txtInputLanguage.value = cfg.InputLanguage || '';
@@ -485,14 +501,16 @@
           }
         }
 
-        async function fetchModels(domainUrl, selectedModel, apiKey) {
+        async function fetchModels(domainUrl, selectedModel, apiKey, modelsPath) {
             selModel.innerHTML = '<option value="">-- Fetching... --</option>';
             try {
                 const proxyUrl = window.ApiClient.getUrl("jellyzer/openai-models");
                 const apiKeyValue = (apiKey || '').trim();
+                const modelsPathValue = (modelsPath || '/models').trim();
                 const urlWithParams = proxyUrl
                   + "?domain=" + encodeURIComponent(domainUrl.trim())
-                  + "&apiKey=" + encodeURIComponent(apiKeyValue);
+                  + "&apiKey=" + encodeURIComponent(apiKeyValue)
+                  + "&modelsPath=" + encodeURIComponent(modelsPathValue);
                 
                 const data = await window.ApiClient.getJSON(urlWithParams);
 
@@ -521,6 +539,8 @@
             
             cfg.OpenApiDomain = txtDomain.value.trim();
             cfg.OpenApiKey = txtApiKey.value.trim();
+            cfg.OpenApiModelsPath = txtModelsPath.value.trim() || '/models';
+            cfg.OpenApiCompletionPath = txtCompletionPath.value.trim() || '/chat/completions';
             cfg.OpenApiModel = selModel.value || '';
 
             cfg.InputLanguage = txtInputLanguage.value.trim();
@@ -714,6 +734,8 @@
                   TranslateEpisodeTitle: chkEpisodeTitle.checked,
                   OpenApiDomain: txtDomain.value.trim(),
                   OpenApiKey: txtApiKey.value.trim(),
+                  OpenApiModelsPath: txtModelsPath.value.trim() || '/models',
+                  OpenApiCompletionPath: txtCompletionPath.value.trim() || '/chat/completions',
                   OpenApiModel: selModel.value,
                   InputLanguage: txtInputLanguage.value.trim(),
                   OutputLanguage: txtOutputLanguage.value.trim(),
@@ -750,7 +772,7 @@
 
         btnFetch.addEventListener('click', () => {
           if (!txtDomain.value) return;
-          fetchModels(txtDomain.value, selModel.value, txtApiKey.value);
+          fetchModels(txtDomain.value, selModel.value, txtApiKey.value, txtModelsPath.value);
         });
 
         txtSearch.addEventListener('input', () => populateDropdown(selItem.value));

@@ -27,6 +27,16 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public string OpenApiKey { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Gets or sets the endpoint path used to list models.
+    /// </summary>
+    public string OpenApiModelsPath { get; set; } = "/models";
+
+    /// <summary>
+    /// Gets or sets the endpoint path used for chat completions.
+    /// </summary>
+    public string OpenApiCompletionPath { get; set; } = "/chat/completions";
+
     public string OpenApiModel { get; set; } = string.Empty;
 
     public string InputLanguage { get; set; } = string.Empty;

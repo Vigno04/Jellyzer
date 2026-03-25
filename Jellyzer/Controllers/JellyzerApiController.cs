@@ -75,7 +75,7 @@ public sealed class JellyzerApiController : ControllerBase
     /// Proxies the /models request to the OpenAPI domain to bypass CORS restrictions.
     /// </summary>
     [HttpGet("openai-models")]
-    public async Task<ActionResult> GetOpenAiModels([FromQuery] string domain, [FromQuery] string? apiKey)
+    public async Task<ActionResult> GetOpenAiModels([FromQuery] string domain, [FromQuery] string? apiKey, [FromQuery] string? modelsPath)
     {
         if (string.IsNullOrWhiteSpace(domain))
         {
@@ -84,7 +84,7 @@ public sealed class JellyzerApiController : ControllerBase
 
         try
         {
-            var url = domain.TrimEnd('/') + "/models";
+            var url = BuildOpenApiUrl(domain, modelsPath, "/models");
             var client = _httpClientFactory.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(15);
 
@@ -282,6 +282,8 @@ public sealed class JellyzerApiController : ControllerBase
             {
                 OpenApiDomain = request.OpenApiDomain,
                 OpenApiKey = request.OpenApiKey,
+                OpenApiModelsPath = request.OpenApiModelsPath,
+                OpenApiCompletionPath = request.OpenApiCompletionPath,
                 OpenApiModel = request.OpenApiModel,
                 InputLanguage = request.InputLanguage,
                 OutputLanguage = request.OutputLanguage,
@@ -569,7 +571,7 @@ public sealed class JellyzerApiController : ControllerBase
 
     private async Task<(string text, string prompt, string rawOutput)> CallLlmTranslation(string text, TranslateItemRequest request)
     {
-        var url = request.OpenApiDomain.TrimEnd('/') + "/chat/completions";
+        var url = BuildOpenApiUrl(request.OpenApiDomain, request.OpenApiCompletionPath, "/chat/completions");
         
         var sysPrompt = request.SystemPrompt ?? "";
         sysPrompt = sysPrompt.Replace("[INPUT_LANGUAGE]", request.InputLanguage ?? "auto-detect")
@@ -639,6 +641,31 @@ public sealed class JellyzerApiController : ControllerBase
 
         return ("", json, "ERROR");
     }
+
+    private static string BuildOpenApiUrl(string domain, string? customPath, string defaultPath)
+    {
+        var normalizedDomain = (domain ?? string.Empty).Trim();
+        var normalizedPath = string.IsNullOrWhiteSpace(customPath) ? defaultPath : customPath.Trim();
+
+        if (Uri.TryCreate(normalizedPath, UriKind.Absolute, out var absoluteUri))
+        {
+            return absoluteUri.ToString();
+        }
+
+        var pathSegment = normalizedPath.StartsWith('/') ? normalizedPath : "/" + normalizedPath;
+
+        if (!Uri.TryCreate(normalizedDomain, UriKind.Absolute, out var baseUri))
+        {
+            return normalizedDomain.TrimEnd('/') + pathSegment;
+        }
+
+        var rootUri = new Uri(baseUri.GetLeftPart(UriPartial.Authority));
+        var combined = normalizedPath.StartsWith('/')
+            ? new Uri(rootUri, pathSegment)
+            : new Uri(baseUri.ToString().TrimEnd('/') + "/" + normalizedPath);
+
+        return combined.ToString();
+    }
 }
 
 public sealed class TranslateItemRequest
@@ -648,6 +675,8 @@ public sealed class TranslateItemRequest
     public bool TranslateDescription { get; set; }
     public string OpenApiDomain { get; set; } = string.Empty;
     public string OpenApiKey { get; set; } = string.Empty;
+    public string OpenApiModelsPath { get; set; } = "/models";
+    public string OpenApiCompletionPath { get; set; } = "/chat/completions";
     public string OpenApiModel { get; set; } = string.Empty;
     public string InputLanguage { get; set; } = string.Empty;
     public string OutputLanguage { get; set; } = string.Empty;
@@ -667,6 +696,8 @@ public sealed class StartTranslationRequest
     public bool TranslateEpisodeTitle { get; set; }
     public string OpenApiDomain { get; set; } = string.Empty;
     public string OpenApiKey { get; set; } = string.Empty;
+    public string OpenApiModelsPath { get; set; } = "/models";
+    public string OpenApiCompletionPath { get; set; } = "/chat/completions";
     public string OpenApiModel { get; set; } = string.Empty;
     public string InputLanguage { get; set; } = string.Empty;
     public string OutputLanguage { get; set; } = string.Empty;
