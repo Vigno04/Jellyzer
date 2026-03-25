@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text;
 using System.Threading;
@@ -74,7 +75,7 @@ public sealed class JellyzerApiController : ControllerBase
     /// Proxies the /models request to the OpenAPI domain to bypass CORS restrictions.
     /// </summary>
     [HttpGet("openai-models")]
-    public async Task<ActionResult> GetOpenAiModels([FromQuery] string domain)
+    public async Task<ActionResult> GetOpenAiModels([FromQuery] string domain, [FromQuery] string? apiKey)
     {
         if (string.IsNullOrWhiteSpace(domain))
         {
@@ -86,6 +87,12 @@ public sealed class JellyzerApiController : ControllerBase
             var url = domain.TrimEnd('/') + "/models";
             var client = _httpClientFactory.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(15);
+
+            if (!string.IsNullOrWhiteSpace(apiKey))
+            {
+                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey.Trim());
+            }
+
             var response = await client.GetStringAsync(url);
             return Content(response, "application/json");
         }
@@ -274,6 +281,7 @@ public sealed class JellyzerApiController : ControllerBase
             var translatedRequest = new TranslateItemRequest
             {
                 OpenApiDomain = request.OpenApiDomain,
+                OpenApiKey = request.OpenApiKey,
                 OpenApiModel = request.OpenApiModel,
                 InputLanguage = request.InputLanguage,
                 OutputLanguage = request.OutputLanguage,
@@ -583,6 +591,11 @@ public sealed class JellyzerApiController : ControllerBase
         var client = _httpClientFactory.CreateClient();
         var timeoutSeconds = Math.Clamp(request.LlmTimeoutSeconds <= 0 ? 120 : request.LlmTimeoutSeconds, 10, 3600);
         client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
+
+        if (!string.IsNullOrWhiteSpace(request.OpenApiKey))
+        {
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", request.OpenApiKey.Trim());
+        }
         
         var json = JsonSerializer.Serialize(payload);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -634,6 +647,7 @@ public sealed class TranslateItemRequest
     public bool TranslateTitle { get; set; }
     public bool TranslateDescription { get; set; }
     public string OpenApiDomain { get; set; } = string.Empty;
+    public string OpenApiKey { get; set; } = string.Empty;
     public string OpenApiModel { get; set; } = string.Empty;
     public string InputLanguage { get; set; } = string.Empty;
     public string OutputLanguage { get; set; } = string.Empty;
@@ -652,6 +666,7 @@ public sealed class StartTranslationRequest
     public bool TranslateSeasonTitle { get; set; }
     public bool TranslateEpisodeTitle { get; set; }
     public string OpenApiDomain { get; set; } = string.Empty;
+    public string OpenApiKey { get; set; } = string.Empty;
     public string OpenApiModel { get; set; } = string.Empty;
     public string InputLanguage { get; set; } = string.Empty;
     public string OutputLanguage { get; set; } = string.Empty;

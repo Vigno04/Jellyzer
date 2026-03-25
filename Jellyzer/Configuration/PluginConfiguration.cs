@@ -22,6 +22,11 @@ public class PluginConfiguration : BasePluginConfiguration
     /// </summary>
     public string OpenApiDomain { get; set; } = "http://localhost:11434/v1";
 
+    /// <summary>
+    /// Gets or sets the optional API key used for OpenAI-compatible APIs.
+    /// </summary>
+    public string OpenApiKey { get; set; } = string.Empty;
+
     public string OpenApiModel { get; set; } = string.Empty;
 
     public string InputLanguage { get; set; } = string.Empty;

@@ -195,6 +195,12 @@
                     <div class="fieldDescription">The base URL for the OpenAI-compatible API (e.g., LM Studio, Ollama).</div>
                   </div>
 
+                  <div class="inputContainer">
+                    <label class="inputLabel inputLabelUnfocused" for="txtOpenApiKey">API Key (optional):</label>
+                    <input type="password" id="txtOpenApiKey" is="emby-input" class="emby-input" placeholder="sk-..." autocomplete="off" />
+                    <div class="fieldDescription">If your provider requires authentication, this key is sent as a Bearer token.</div>
+                  </div>
+
                   <div class="inputContainer" style="display: flex; gap: 1em; align-items: flex-end;">
                     <div style="flex-grow: 1;">
                       <label class="selectLabel" for="selOpenApiModel">Available Model:</label>
@@ -280,6 +286,7 @@
         const selEpisode    = document.querySelector('#selEpisode');
 
         const txtDomain     = document.querySelector('#txtOpenApiDomain');
+        const txtApiKey     = document.querySelector('#txtOpenApiKey');
         const selModel      = document.querySelector('#selOpenApiModel');
         const txtLlmTimeout = document.querySelector('#txtLlmTimeout');
         const btnFetch        = document.querySelector('#btnFetchModels');
@@ -445,8 +452,9 @@
             const cfg = await window.ApiClient.getPluginConfiguration(PLUGIN_ID);
             
             txtDomain.value = cfg.OpenApiDomain || "http://localhost:11434/v1";
+            txtApiKey.value = cfg.OpenApiKey || '';
             if (cfg.OpenApiDomain && cfg.OpenApiModel) {
-              await fetchModels(cfg.OpenApiDomain, cfg.OpenApiModel);
+              await fetchModels(cfg.OpenApiDomain, cfg.OpenApiModel, cfg.OpenApiKey || '');
             }
 
             txtInputLanguage.value = cfg.InputLanguage || '';
@@ -477,11 +485,14 @@
           }
         }
 
-        async function fetchModels(domainUrl, selectedModel) {
+        async function fetchModels(domainUrl, selectedModel, apiKey) {
             selModel.innerHTML = '<option value="">-- Fetching... --</option>';
             try {
                 const proxyUrl = window.ApiClient.getUrl("jellyzer/openai-models");
-                const urlWithParams = proxyUrl + "?domain=" + encodeURIComponent(domainUrl.trim());
+                const apiKeyValue = (apiKey || '').trim();
+                const urlWithParams = proxyUrl
+                  + "?domain=" + encodeURIComponent(domainUrl.trim())
+                  + "&apiKey=" + encodeURIComponent(apiKeyValue);
                 
                 const data = await window.ApiClient.getJSON(urlWithParams);
 
@@ -509,6 +520,7 @@
             const cfg = await window.ApiClient.getPluginConfiguration(PLUGIN_ID);
             
             cfg.OpenApiDomain = txtDomain.value.trim();
+            cfg.OpenApiKey = txtApiKey.value.trim();
             cfg.OpenApiModel = selModel.value || '';
 
             cfg.InputLanguage = txtInputLanguage.value.trim();
@@ -701,6 +713,7 @@
                   TranslateSeasonTitle: chkSeasonTitle.checked,
                   TranslateEpisodeTitle: chkEpisodeTitle.checked,
                   OpenApiDomain: txtDomain.value.trim(),
+                  OpenApiKey: txtApiKey.value.trim(),
                   OpenApiModel: selModel.value,
                   InputLanguage: txtInputLanguage.value.trim(),
                   OutputLanguage: txtOutputLanguage.value.trim(),
@@ -737,7 +750,7 @@
 
         btnFetch.addEventListener('click', () => {
           if (!txtDomain.value) return;
-          fetchModels(txtDomain.value, selModel.value);
+          fetchModels(txtDomain.value, selModel.value, txtApiKey.value);
         });
 
         txtSearch.addEventListener('input', () => populateDropdown(selItem.value));
