@@ -9,6 +9,14 @@
     "imageUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/main/Jellyzer/logo.png",
     "versions": [
       {
+        "version": "0.0.4.0",
+        "targetAbi": "10.11.6.0",
+        "sourceUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/main/packages/jellyzer-0.0.4.zip",
+        "checksum": "6f1fca5aabeececc2697c8c1d281c5f3",
+        "timestamp": "2026-03-25T22:30:01Z",
+        "changelog": "Addes support to use api keys"
+      },
+      {
         "version": "0.0.3.0",
         "targetAbi": "10.11.6.0",
         "sourceUrl": "https://raw.githubusercontent.com/Vigno04/Jellyzer/refs/heads/main/packages/jellyzer-0.0.3.zip",
